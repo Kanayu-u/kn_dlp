@@ -1,0 +1,13 @@
+# 実行
+PySide6>=6.11
+# yt-dlp の任意依存(exe に同梱)
+brotli
+certifi
+curl_cffi
+mutagen
+pycryptodomex
+requests
+urllib3
+websockets
+# ビルド
+pyinstaller>=6.22
