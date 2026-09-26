@@ -192,6 +192,7 @@ def _run(request: dict) -> int:
                 if embed_args is not None:
                     ydl.add_post_processor(_safe_embed_thumbnail(ydl, embed_args), when='post_process')
                 ydl.add_post_processor(_plugin_notice(ydl, logger), when='pre_process')
+                _add_plugin_pps(ydl, job.get('plugin_pps') or [], logger)
                 code = ydl.download([job['url']])
             emit('result', code=code, ytdlp=ytdlp_version)
             return 0 if code == 0 else 1
@@ -253,6 +254,34 @@ def _note_plugin(ydl, info: dict, logger: _Logger, seen: set[str]) -> None:
         return
     if plugins.is_plugin_extractor(ie):
         logger.info(tr('プラグインを使用: {name}', name=getattr(ie, 'IE_NAME', key)))
+
+
+def _add_plugin_pps(ydl, specs: list, logger: _Logger) -> None:
+    """有効にした後処理プラグインを、標準の後処理の後ろに足す。
+
+    params['postprocessors'] に入れると埋め込み等より前に走ってしまう(更新日時を揃える PP などが無意味になる)ので、
+    YoutubeDL 生成後に add_post_processor で末尾へ追加する。無い・引数が合わないものは警告して飛ばす。
+    """
+    from yt_dlp.globals import plugin_pps
+    from .options import JobError, plugin_pp_spec
+
+    for spec in specs:
+        try:
+            name, when, args = plugin_pp_spec(spec)
+        except JobError as e:
+            logger.warning(str(e))
+            continue
+        cls = plugin_pps.value.get(f'{name}PP')
+        if cls is None:
+            logger.warning(tr('後処理プラグイン {name} が見つからないため飛ばしました', name=name))
+            continue
+        try:
+            pp = cls(ydl, **args)
+        except Exception as e:  # noqa: BLE001  (プラグインの不備でジョブ全体を落とさない)
+            logger.warning(tr('後処理プラグイン {name} を開始できませんでした: {error}', name=name, error=f'{type(e).__name__}: {e}'))
+            continue
+        ydl.add_post_processor(pp, when=when)
+        logger.info(tr('後処理プラグインを追加: {name} ({when})', name=name, when=when))
 
 
 def _plugin_notice(ydl, logger: _Logger):

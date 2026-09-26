@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from . import paths
-from .options import DEFAULT_TEMPLATE
+from .options import DEFAULT_TEMPLATE, JobError, plugin_pp_spec
 from .plugins import MODES as PLUGIN_MODES
 from .i18n import N_, tr
 
@@ -56,7 +56,22 @@ DEFAULTS: dict[str, Any] = {
     'language': '',
     'theme': 'system',
     'plugins': 'all',          # all / app(kn_dlp のみ) / off
+    'plugin_pps': [],          # 後処理プラグインの設定 [{'name', 'when', 'args', 'enabled'}]
 }
+
+
+def _clean_plugin_pps(items: list) -> list[dict[str, Any]]:
+    """後処理プラグインの設定から、壊れた項目と重複(同名)を除く。"""
+    out: dict[str, dict[str, Any]] = {}
+    for it in items:
+        if not isinstance(it, dict) or not isinstance(it.get('args', ''), str):
+            continue
+        try:
+            name, when, _ = plugin_pp_spec({**it, 'args': ''})   # 引数の書式誤りは実行時に警告する
+        except JobError:
+            continue
+        out[name] = {'name': name, 'when': when, 'args': it.get('args', ''), 'enabled': it.get('enabled') is True}
+    return list(out.values())
 
 
 class Settings:
@@ -85,6 +100,7 @@ class Settings:
                 self.data['theme'] = 'system'
             if self.data['plugins'] not in PLUGIN_MODES:
                 self.data['plugins'] = 'all'
+            self.data['plugin_pps'] = _clean_plugin_pps(self.data['plugin_pps'])
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +118,21 @@ class Settings:
 
     def __setitem__(self, key: str, value: Any) -> None:
         self.data[key] = value
+
+    # --- plugin post-processors ---
+    def plugin_pp(self, name: str) -> dict[str, Any]:
+        for it in self.data['plugin_pps']:
+            if it['name'] == name:
+                return dict(it)
+        return {'name': name, 'when': 'post_process', 'args': '', 'enabled': False}
+
+    def set_plugin_pp(self, name: str, **changes: Any) -> None:
+        item = {**self.plugin_pp(name), **changes}
+        self.data['plugin_pps'] = _clean_plugin_pps([it for it in self.data['plugin_pps'] if it['name'] != name] + [item])
+        self.save()
+
+    def enabled_plugin_pps(self) -> list[dict[str, str]]:
+        return [{k: it[k] for k in ('name', 'when', 'args')} for it in self.data['plugin_pps'] if it['enabled']]
 
     # --- profiles ---
     def profile_ids(self) -> list[str]:

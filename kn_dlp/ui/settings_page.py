@@ -5,7 +5,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLineEdit, QMessageBox, QScrollArea,
                                QFrame, QSpinBox, QVBoxLayout, QWidget)
 
-from .. import APP_DISPLAY_NAME, __version__, i18n, paths, plugins, tools, updater
+from .. import APP_DISPLAY_NAME, __version__, i18n, options, paths, plugins, tools, updater
 from ..settings import LANGUAGES, Settings
 from .procs import BgTask, WorkerProcess
 from . import theme
@@ -232,6 +232,50 @@ class SettingsPage(QWidget):
         proc.finished.connect(lambda _code: self._on_plugins(proc, result))
         proc.start('plugins')
 
+    def _pp_controls(self, name: str) -> QWidget:
+        """後処理プラグイン1つ分の「実行する / 時点 / 引数」。変更はその場で保存する。"""
+        cfg = self.settings.plugin_pp(name)
+        box = QWidget()
+        row = QHBoxLayout(box)
+        row.setContentsMargins(16, 0, 0, 0)
+        row.setSpacing(8)
+        on = QCheckBox(tr('実行する'))
+        on.setChecked(cfg['enabled'])
+        when = QComboBox()
+        for key, text in (('pre_process', tr('解析の直後')), ('before_dl', tr('ダウンロード前')),
+                          ('post_process', tr('ダウンロード後 (既定)')), ('after_move', tr('保存先へ移動した後')),
+                          ('playlist', tr('再生リストの最後'))):
+            when.addItem(text, key)
+        when.setCurrentIndex(max(0, when.findData(cfg['when'])))
+        args = QLineEdit(cfg['args'])
+        args.setPlaceholderText(tr('引数 (例: key=value;key2=value2)'))
+        err = label('', 'errText')
+        err.hide()
+
+        def save_args() -> None:
+            try:
+                options.parse_pp_args(args.text())
+            except options.JobError as e:
+                err.setText(str(e))
+                err.show()
+                return
+            err.hide()
+            self.settings.set_plugin_pp(name, args=args.text().strip())
+
+        on.toggled.connect(lambda v: self.settings.set_plugin_pp(name, enabled=bool(v)))
+        when.currentIndexChanged.connect(lambda _i: self.settings.set_plugin_pp(name, when=when.currentData()))
+        args.editingFinished.connect(save_args)
+        row.addWidget(on)
+        row.addWidget(when)
+        row.addWidget(args, 1)
+        wrap = QWidget()
+        col = QVBoxLayout(wrap)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(2)
+        col.addWidget(box)
+        col.addWidget(err)
+        return wrap
+
     def _clear_plugin_list(self) -> None:
         while self.plug_list.count():
             w = self.plug_list.takeAt(0).widget()
@@ -259,11 +303,19 @@ class SettingsPage(QWidget):
         self._status(self.plug_status, text, 'muted')
         dirs = result.get('dirs') or []
         self.plug_status.setToolTip(tr('探索した場所:') + '\n' + '\n'.join(dirs) if dirs else '')
+        has_pp = False
         for it in items:
             lb = label(f"{kinds.get(it.get('kind'), it.get('kind'))}  ·  {it.get('name')}", wrap=True)
             lb.setToolTip(f"{it.get('class')}\n{it.get('file')}")
             self.plug_list.addWidget(lb)
+            if it.get('kind') == 'postprocessor' and str(it.get('class', '')).endswith('PP'):
+                has_pp = True
+                self.plug_list.addWidget(self._pp_controls(str(it['class'])[:-2]))
             self.plug_list.addWidget(label(str(it.get('file') or ''), 'faint', wrap=True))
+        if has_pp:
+            self.plug_list.addWidget(label(tr('後処理のプラグインは「実行する」にしたものだけが動きます(同じ時点の標準の後処理より後)。'
+                                              '引数は key=value を ; で区切ります (yt-dlp の --use-postprocessor と同じ書式)。'),
+                                           'faint', wrap=True))
         for err in errors:
             self.plug_list.addWidget(label(tr('✕ 読み込み失敗: {module} — {error}', **err), 'errText', wrap=True))
 
@@ -274,7 +326,9 @@ class SettingsPage(QWidget):
     # ---- ツール ----
     def env(self) -> dict:
         ff = tools.find_ffmpeg(self.settings['ffmpeg_path'])
-        return {'ffmpeg_location': ff or '', 'js_runtime': tools.find_js_runtime(self.settings['js_runtime'])}
+        pps = self.settings.enabled_plugin_pps() if plugins.current_mode() != 'off' else []
+        return {'ffmpeg_location': ff or '', 'js_runtime': tools.find_js_runtime(self.settings['js_runtime']),
+                'plugin_pps': pps}
 
     def refresh_tools(self) -> None:
         e = self.env()

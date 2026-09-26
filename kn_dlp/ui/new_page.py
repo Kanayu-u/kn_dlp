@@ -700,8 +700,8 @@ class NewPage(QWidget):
             self._show_probe(tr('予約時刻が過去です'), error=True)
             return
         title = (self.info or {}).get('title') or spec['url']
-        # 実行環境(ffmpeg/JS)は実行直前に最新を入れ直すので、キューには保存しない
-        for k in ('ffmpeg_location', 'js_runtime'):
+        # 実行環境(ffmpeg/JS/後処理プラグイン)は実行直前に最新を入れ直すので、キューには保存しない
+        for k in ('ffmpeg_location', 'js_runtime', 'plugin_pps'):
             spec.pop(k, None)
         self.enqueue.emit(spec, title, self.current_thumbnail(), start_at)
         self.settings['download_dir'] = spec['out_dir'] or self.settings['download_dir']

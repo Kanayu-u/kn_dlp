@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from typing import Any
 
 from .timeparse import parse_timestamp
@@ -54,7 +55,13 @@ JOB_DEFAULTS: dict[str, Any] = {
     'ffmpeg_location': '',
     'js_runtime': None,         # {'name': 'node', 'path': '...'} | None
     'rate_limit': '',           # '5M' など
+    'plugin_pps': [],           # 有効な後処理プラグイン [{'name', 'when', 'args'}](実行直前に設定から入れる)
 }
+
+# 後処理プラグインを動かす時点(yt-dlp の --use-postprocessor の when のうち、GUI で選べるもの)
+PP_WHEN = ('pre_process', 'before_dl', 'post_process', 'after_move', 'playlist')
+_PP_NAME_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+_PP_RESERVED = {'when', 'key', 'downloader'}
 
 
 class JobError(ValueError):
@@ -152,6 +159,34 @@ def build_postprocessors(job: dict[str, Any]) -> list[dict[str, Any]]:
             pps.insert(0, {'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg', 'when': 'before_dl'})
         pps.append({'key': 'EmbedThumbnail', 'already_have_thumbnail': False})
     return pps
+
+
+def parse_pp_args(text: str) -> dict[str, str]:
+    """'key=value;key2=value2'(--use-postprocessor と同じ書式)を辞書にする。値は文字列のまま。"""
+    args: dict[str, str] = {}
+    for part in str(text or '').split(';'):
+        if not part.strip():
+            continue
+        key, eq, value = part.partition('=')
+        key = key.strip()
+        if not eq or not _PP_NAME_RE.match(key):
+            raise JobError(tr('後処理の引数は key=value を ; で区切って指定してください: {part}', part=part.strip()))
+        if key in _PP_RESERVED:
+            raise JobError(tr('後処理の引数に {key} は使えません', key=key))
+        args[key] = value
+    return args
+
+
+def plugin_pp_spec(spec: Any) -> tuple[str, str, dict[str, str]]:
+    """設定の1項目を (名前, 時点, 引数) に検証・変換する。"""
+    if not isinstance(spec, dict):
+        raise JobError(tr('後処理プラグインの指定が不正です'))
+    name, when = str(spec.get('name') or ''), str(spec.get('when') or 'post_process')
+    if not _PP_NAME_RE.match(name):
+        raise JobError(tr('後処理プラグインの名前が不正です: {name}', name=name))
+    if when not in PP_WHEN:
+        raise JobError(tr('後処理プラグインの実行時点が不正です: {when}', when=when))
+    return name, when, parse_pp_args(spec.get('args') or '')
 
 
 def _parse_rate(rate: str) -> int | None:

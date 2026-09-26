@@ -1,6 +1,9 @@
 """プラグインの読み込み範囲・一覧・エラー表示。実際にワーカーを起動して確かめる(ネットワーク不要)。"""
+import functools
+import http.server
 import json
 import os
+import threading
 import subprocess
 import sys
 import tempfile
@@ -8,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from kn_dlp import plugins
+from kn_dlp import options, plugins
 from kn_dlp.settings import Settings
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -30,6 +33,36 @@ from yt_dlp.postprocessor.common import PostProcessor
 class KnNoopPP(PostProcessor):
     def run(self, info):
         return [], info
+'''
+
+
+# ダウンロード後に呼ばれたことと、受け取った引数・呼ばれた順番を印ファイルに残す
+MARK_PP = '''
+import json, os
+from yt_dlp.postprocessor.common import PostProcessor
+
+class KnMarkPP(PostProcessor):
+    def __init__(self, downloader=None, tag='none'):
+        super().__init__(downloader)
+        self.tag = tag
+
+    def run(self, info):
+        path = info['filepath']
+        with open(path + '.mark.json', 'w') as f:
+            json.dump({'tag': self.tag, 'exists': os.path.exists(path), 'pp_order': [type(p).__name__ for p in self._downloader._pps['post_process']]}, f)
+        self.to_screen('marked ' + self.tag)
+        return [], info
+'''
+
+LOCAL_IE = '''
+from yt_dlp.extractor.common import InfoExtractor
+
+class KnLocalIE(InfoExtractor):
+    _VALID_URL = r'https?://knlocal\\.invalid/(?P<id>\\w+)'
+
+    def _real_extract(self, url):
+        return {{'id': self._match_id(url), 'title': 'local', 'url': 'http://127.0.0.1:{port}/clip.bin', 'ext': 'mp4',
+                 'vcodec': 'avc1', 'acodec': 'mp4a'}}
 '''
 
 
@@ -68,6 +101,36 @@ class PluginModeTest(unittest.TestCase):
             {'module': 'yt_dlp_plugins.extractor.bad', 'error': 'SyntaxError: invalid syntax'},
             {'module': 'yt_dlp_plugins.postprocessor.b2', 'error': 'ImportError: no module'}])
         self.assertEqual(plugins.parse_errors(''), [])
+
+    def test_parse_pp_args(self):
+        self.assertEqual(options.parse_pp_args('a=1; b = x=y ;'), {'a': '1', 'b': ' x=y '})
+        self.assertEqual(options.parse_pp_args(''), {})
+        for bad in ('novalue', 'when=before_dl', 'key=x', '1a=2', '=v'):
+            with self.assertRaises(options.JobError, msg=bad):
+                options.parse_pp_args(bad)
+
+    def test_plugin_pp_spec(self):
+        self.assertEqual(options.plugin_pp_spec({'name': 'FixupMtime', 'args': 'mtime_key=upload_date'}),
+                         ('FixupMtime', 'post_process', {'mtime_key': 'upload_date'}))
+        for bad in ({'name': 'a.b'}, {'name': 'X', 'when': 'video'}, 'X', {'name': ''}):
+            with self.assertRaises(options.JobError, msg=repr(bad)):
+                options.plugin_pp_spec(bad)
+
+    def test_settings_plugin_pps(self):
+        path = Path(self.tmp) / 'pp.json'
+        path.write_text(json.dumps({'plugin_pps': [
+            {'name': 'Good', 'when': 'after_move', 'args': 'a=1', 'enabled': True},
+            {'name': 'bad name'}, 'junk', {'name': 'Off', 'enabled': 'yes'}, {'name': 'Good', 'args': 5}]}), encoding='utf-8')
+        s = Settings(path)
+        self.assertEqual(s['plugin_pps'], [{'name': 'Good', 'when': 'after_move', 'args': 'a=1', 'enabled': True},
+                                           {'name': 'Off', 'when': 'post_process', 'args': '', 'enabled': False}])
+        self.assertEqual(s.enabled_plugin_pps(), [{'name': 'Good', 'when': 'after_move', 'args': 'a=1'}])
+        s.set_plugin_pp('Off', enabled=True, when='before_dl')
+        s.set_plugin_pp('New', args='x=1')
+        again = Settings(path)
+        self.assertEqual(again.plugin_pp('Off')['when'], 'before_dl')
+        self.assertEqual([p['name'] for p in again.enabled_plugin_pps()], ['Good', 'Off'])
+        self.assertFalse(again.plugin_pp('New')['enabled'])
 
     def test_settings_validates_mode(self):
         path = Path(self.tmp) / 's.json'
@@ -125,6 +188,33 @@ class WorkerPluginsTest(unittest.TestCase):
     def test_off(self):
         res = self._run('off')
         self.assertEqual((res['items'], res['errors']), ([], []))
+
+    def test_download_runs_enabled_pp_last_with_args(self):
+        www = self.tmp / 'www'
+        www.mkdir(exist_ok=True)
+        (www / 'clip.bin').write_bytes(os.urandom(4096))
+        srv = http.server.ThreadingHTTPServer(
+            ('127.0.0.1', 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(www)))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        own = self.data / 'plugins'
+        _write_plugin(own, 'dlpkg', 'extractor', 'local', LOCAL_IE.format(port=srv.server_address[1]))
+        _write_plugin(own, 'dlpkg', 'postprocessor', 'mark', MARK_PP)
+        out = self.tmp / 'out'
+        job = {'url': 'https://knlocal.invalid/v1', 'out_dir': str(out), 'metadata': False, 'chapters': False,
+               'plugin_pps': [{'name': 'KnMark', 'when': 'post_process', 'args': 'tag=hello'},
+                              {'name': 'KnMissing'}, {'name': 'KnMark', 'args': 'nope=1'}]}
+        res = self._run('app', 'download', job)
+        self.assertEqual(res['t'], 'result', res)
+        marks = list(out.glob('*.mark.json'))
+        self.assertEqual(len(marks), 1, list(out.iterdir()))
+        mark = json.loads(marks[0].read_text())
+        self.assertEqual((mark['tag'], mark['exists']), ('hello', True))
+        self.assertEqual(mark['pp_order'][-1], 'KnMarkPP')     # 標準の後処理より後ろ
+        logs = '\n'.join(res['_logs'])
+        self.assertIn('KnMissing', logs)
+        self.assertIn('nope', logs)                            # 未知の引数は警告して飛ばす
 
     def test_probe_reports_plugin_use_and_load_error(self):
         res = self._run('app', 'probe', {'url': 'https://known.invalid/abc'})

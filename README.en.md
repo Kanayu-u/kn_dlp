@@ -47,7 +47,9 @@ Put [yt-dlp plugins](https://github.com/yt-dlp/yt-dlp#plugins) here and they are
 %LOCALAPPDATA%\kn_dlp\plugins\<name>\yt_dlp_plugins\postprocessor\<name>.py  (post-processing)
 ```
 
-Distributed `.zip` plugins can be dropped into `plugins` as is. In Settings → "Load from" you can choose to also read yt-dlp's default locations (`%APPDATA%\yt-dlp\plugins`, etc.) (All), only the kn_dlp folder, or no plugins (Off).
+A `.zip` with `yt_dlp_plugins` at its top level can be dropped into `plugins` as is (GitHub's "Download ZIP" adds one extra folder level, so extract it into the layout above). In Settings → "Load from" you can choose to also read yt-dlp's default locations (`%APPDATA%\yt-dlp\plugins`, etc.) (All), only the kn_dlp folder, or no plugins (Off).
+**Post-processing plugins do not run just by being loaded** (same as yt-dlp's `--use-postprocessor`). In the settings list, tick "Run" and choose the stage and arguments (`key=value` separated by `;`). They run after the built-in post-processing of the same stage (embedding, etc.).
+
 Plugins are Python code that runs with your user rights. Only install plugins you trust. They may stop working after a yt-dlp update.
 
 ## Development
