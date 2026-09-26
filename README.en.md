@@ -15,6 +15,7 @@ Version: **0.2.0** / License: **GPL-3.0**
 | Clip a section | Download only the part between a start and end time. "Cut precisely" re-encodes for exact cuts |
 | Subtitles, chapters, thumbnail | Choose subtitle languages, include auto-generated ones, embed subtitles/chapters/thumbnail/metadata |
 | History | Stored in SQLite. Search, play, open folder, or download again with the same settings |
+| App update check | Tells you when a new release is on GitHub and opens the release page (replacing the app is manual) |
 | yt-dlp updates | Fetches the latest official release, verifies SHA-256 and swaps it in. Roll back to the previous or bundled version. No app restart needed |
 | Profiles | Save combinations of settings by name. Four built-in profiles |
 | Live & schedule | Wait for a live stream/premiere to start and record it, or schedule a start time |

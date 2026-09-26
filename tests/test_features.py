@@ -1,11 +1,12 @@
 """SponsorBlock とダウンロード済みの記録のオプション組み立て(ネットワーク不要)。"""
+import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from kn_dlp import archive, options
+from kn_dlp import archive, options, updater
 
 URL = 'https://www.youtube.com/watch?v=jNQXAC9IVRw'
 
@@ -66,6 +67,31 @@ class ArchiveTest(unittest.TestCase):
             archive.clear()
             self.assertEqual(archive.count(), 0)
             self.assertTrue(Path(str(archive.path()) + '.bak').is_file())
+
+
+class AppUpdateTest(unittest.TestCase):
+    def _fetch(self, payload: dict) -> dict:
+        with mock.patch.object(updater, '_get', return_value=json.dumps(payload).encode()):
+            return updater.fetch_app_latest()
+
+    def test_parse(self):
+        rel = self._fetch({'tag_name': 'v0.3.0', 'published_at': '2026-10-01T00:00:00Z',
+                           'html_url': 'https://github.com/Kanayu-u/kn_dlp/releases/tag/v0.3.0'})
+        self.assertEqual((rel['version'], rel['html_url']), ('0.3.0', 'https://github.com/Kanayu-u/kn_dlp/releases/tag/v0.3.0'))
+
+    def test_foreign_page_is_not_used(self):
+        rel = self._fetch({'tag_name': 'v0.3.0', 'html_url': 'https://evil.example/releases/'})
+        self.assertEqual(rel['html_url'], 'https://github.com/Kanayu-u/kn_dlp/releases/latest')
+
+    def test_bad_tag(self):
+        for tag in ('nightly', '', 'v1'):
+            with self.assertRaises(updater.UpdateError, msg=tag):
+                self._fetch({'tag_name': tag})
+
+    def test_compare(self):
+        self.assertTrue(updater.is_newer('0.10.0', '0.2.0'))
+        self.assertFalse(updater.is_newer('0.2.0', '0.2.0'))
+        self.assertFalse(updater.is_newer('0.1.0', '0.2.0'))
 
 
 if __name__ == '__main__':

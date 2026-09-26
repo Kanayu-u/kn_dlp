@@ -1,7 +1,8 @@
 """設定画面: 既定値・外部ツール・yt-dlp 更新(F)。"""
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QInputDialog, QLineEdit, QMenu,
                                QMessageBox, QScrollArea, QFrame, QSpinBox, QVBoxLayout, QWidget)
 
@@ -30,6 +31,7 @@ def _row(title: str, *widgets, stretch: bool = True) -> QHBoxLayout:
 class SettingsPage(QWidget):
     tools_changed = Signal()
     ytdlp_changed = Signal(str, bool)       # 現在の版, 更新あり
+    app_update_changed = Signal(bool)       # 本アプリの新しい版があるか
 
     def __init__(self, settings: Settings, parent: QWidget | None = None):
         super().__init__(parent)
@@ -89,7 +91,7 @@ class SettingsPage(QWidget):
             br.addWidget(b)
         br.addStretch(1)
         c.body.addLayout(br)
-        self.auto_check = QCheckBox(tr('起動時に更新を確認する'))
+        self.auto_check = QCheckBox(tr('起動時に更新を確認する (yt-dlp と本アプリ)'))
         self.auto_check.setChecked(settings['check_update_on_start'])
         self.auto_check.toggled.connect(lambda v: self._set('check_update_on_start', v))
         c.body.addWidget(self.auto_check)
@@ -196,7 +198,18 @@ class SettingsPage(QWidget):
         c.body.addWidget(label(f'{APP_DISPLAY_NAME} {__version__}', 'title'))
         c.body.addWidget(label(tr('yt-dlp (Unlicense) の GUI です。本アプリは GPL-3.0 で配布しています。'
                                'ダウンロードする内容の権利と各サイトの利用規約は、利用者ご自身で確認してください。'), 'muted', wrap=True))
+        self.app_upd_lb = label('', 'muted', wrap=True)
+        self.app_upd_lb.hide()
+        c.body.addWidget(self.app_upd_lb)
         dr = QHBoxLayout()
+        self.app_check_btn = button(tr('アプリの更新を確認'), 'ghost')
+        self.app_check_btn.clicked.connect(lambda: self.check_app_update())
+        self.app_open_btn = button(tr('リリースページを開く'), 'primary')
+        self.app_open_btn.clicked.connect(self._open_app_release)
+        self.app_open_btn.hide()
+        self.app_latest: dict | None = None
+        dr.addWidget(self.app_check_btn)
+        dr.addWidget(self.app_open_btn)
         od = button(tr('データフォルダを開く'), 'ghost')
         od.clicked.connect(lambda: reveal(str(paths.data_dir() / 'settings.json')))
         dr.addWidget(od)
@@ -541,6 +554,43 @@ class SettingsPage(QWidget):
         task.done.connect(self._on_latest)
         task.failed.connect(lambda e: (self.check_btn.setEnabled(True), self.upd_lb.setText(tr('確認できませんでした: {e}', e=e))))
         task.start()
+
+    # ---- 本アプリの更新 ----
+    def check_app_update(self, silent: bool = False) -> None:
+        self.app_check_btn.setEnabled(False)
+        if not silent:
+            self.app_upd_lb.setText(tr('確認しています…'))
+            self.app_upd_lb.show()
+        task = BgTask(updater.fetch_app_latest)
+        task.done.connect(self._on_app_latest)
+        task.failed.connect(lambda e: self._on_app_failed(e, silent))
+        task.start()
+
+    def _on_app_failed(self, err: str, silent: bool) -> None:
+        self.app_check_btn.setEnabled(True)
+        if not silent:   # 起動時の確認は、オフラインなどで失敗しても黙っている
+            self._status(self.app_upd_lb, tr('確認できませんでした: {e}', e=err), 'errText')
+            self.app_upd_lb.show()
+
+    def _on_app_latest(self, rel: dict) -> None:
+        self.app_check_btn.setEnabled(True)
+        self.app_latest = rel
+        newer = updater.is_newer(rel['version'], __version__)
+        date = rel['published_at'][:10].replace('-', '/')
+        if newer:
+            self._status(self.app_upd_lb, tr('新しい版 {version} ({date} 公開) があります。リリースページから zip を取得して置き換えてください'
+                                             '(設定・履歴・キューはデータフォルダにあるので引き継がれます)。',
+                                             version=rel['version'], date=date), 'warnText')
+        else:
+            self._status(self.app_upd_lb, tr('最新版です (最新 {version} · {date} 公開)', version=rel['version'], date=date), 'muted')
+        self.app_upd_lb.show()
+        self.app_open_btn.setVisible(newer)
+        self.app_update_changed.emit(newer)
+
+    def _open_app_release(self) -> None:
+        url = (self.app_latest or {}).get('html_url') or ''
+        if url.startswith(updater.APP_RELEASES_URL):   # 自分のリリースページ以外は開かない
+            QDesktopServices.openUrl(QUrl(url))
 
     def _on_latest(self, rel: dict) -> None:
         self.check_btn.setEnabled(True)

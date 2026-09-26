@@ -256,7 +256,6 @@ T = {
     '更新する': 'Update',
     '1つ前の版に戻す': 'Roll back',
     '同梱版に戻す': 'Reset to bundled',
-    '起動時に更新を確認する': 'Check for updates on startup',
     '外部ツール': 'External tools',
     '空欄 = 自動検出': 'Blank = auto-detect',
     'ffmpeg を自動取得': 'Download ffmpeg',
@@ -439,4 +438,11 @@ T = {
     '前回の終了時から一時停止中': 'Paused since the app was last closed',
     '前回のキューを {count} 件戻しました(一時停止中)': 'Restored {count} job(s) from the last session (paused)',
     'キューを保存できませんでした: {e}': 'Could not save the queue: {e}',
+    # app update
+    'KN DLP の新しい版があります': 'A new KN DLP version is available',
+    'アプリの更新を確認': 'Check for app updates',
+    'リリースの版番号を読めません: {tag}': 'Cannot read the release version: {tag}',
+    'リリースページを開く': 'Open release page',
+    '新しい版 {version} ({date} 公開) があります。リリースページから zip を取得して置き換えてください(設定・履歴・キューはデータフォルダにあるので引き継がれます)。': 'Version {version} (released {date}) is available. Get the zip from the release page and replace the app (settings, history and the queue are kept in the data folder).',
+    '起動時に更新を確認する (yt-dlp と本アプリ)': 'Check for updates at startup (yt-dlp and this app)',
 }

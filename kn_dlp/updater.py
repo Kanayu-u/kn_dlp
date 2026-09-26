@@ -87,6 +87,31 @@ def fetch_latest() -> dict:
     }
 
 
+APP_REPO = 'Kanayu-u/kn_dlp'
+APP_API_LATEST = f'https://api.github.com/repos/{APP_REPO}/releases/latest'
+APP_RELEASES_URL = f'https://github.com/{APP_REPO}/releases/'
+
+
+def fetch_app_latest() -> dict:
+    """本アプリの最新リリース {'version', 'published_at', 'html_url'}。
+
+    自動で置き換えはしない(未署名の exe が自分自身を書き換えるのは危険が大きい)。リリースページを開くだけ。
+    """
+    try:
+        data = json.loads(_get(APP_API_LATEST, timeout=15))
+    except UpdateError:
+        raise
+    except Exception as e:
+        raise UpdateError(tr('最新版の確認に失敗しました: {e}', e=e)) from e
+    version = str(data.get('tag_name', '')).lstrip('vV')
+    html_url = str(data.get('html_url', ''))
+    if not re.fullmatch(r'\d+(\.\d+){1,3}', version):
+        raise UpdateError(tr('リリースの版番号を読めません: {tag}', tag=data.get('tag_name')))
+    if not html_url.startswith(APP_RELEASES_URL):
+        html_url = APP_RELEASES_URL + 'latest'
+    return {'version': version, 'published_at': str(data.get('published_at', '')), 'html_url': html_url}
+
+
 def is_newer(latest: str, current: str) -> bool:
     if not current:
         return True

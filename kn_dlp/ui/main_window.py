@@ -79,6 +79,10 @@ class MainWindow(QMainWindow):
         self.upd_side.clicked.connect(lambda: self._go(3))
         self.upd_side.hide()
         sv.addWidget(self.upd_side)
+        self.app_upd_side = button(tr('KN DLP の新しい版があります'), 'updLink')
+        self.app_upd_side.clicked.connect(lambda: self._go(3))
+        self.app_upd_side.hide()
+        sv.addWidget(self.app_upd_side)
         sv.addWidget(label(f'v{__version__}', 'faint'))
         h.addWidget(side)
         h.addWidget(self.pages, 1)
@@ -90,6 +94,7 @@ class MainWindow(QMainWindow):
         self.queue.job_finished.connect(self._on_finished)
         self.queue.counts_changed.connect(self._update_badge)
         self.settings_page.ytdlp_changed.connect(self._on_ytdlp)
+        self.settings_page.app_update_changed.connect(self.app_upd_side.setVisible)
         # 同時実行数は設定画面とキュー画面の両方にある。同じ値の setValue は発火しないので往復しない
         self.settings_page.conc.valueChanged.connect(self.queue_page.conc.setValue)
         self.queue_page.conc.valueChanged.connect(self.settings_page.conc.setValue)
@@ -119,6 +124,7 @@ class MainWindow(QMainWindow):
         self.queue.job_removed.connect(lambda _jid: self._save_timer.start())
         if self.settings['check_update_on_start']:
             QTimer.singleShot(1500, lambda: self.settings_page.check_update(silent=True))
+            QTimer.singleShot(2500, lambda: self.settings_page.check_app_update(silent=True))
 
     def _save_queue(self) -> None:
         try:
