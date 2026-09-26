@@ -1,11 +1,9 @@
 # KN DLP
 
+**日本語** | [English](README.en.md)
+
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) の Windows 向けデスクトップ GUI です。
 バージョン: **0.1.0** / ライセンス: **GPL-3.0**
-
-> **English:** A desktop GUI for yt-dlp on Windows. The UI is available in Japanese, English, Korean and
-> Simplified Chinese, with dark/light themes. yt-dlp itself can be updated from inside the app
-> (SHA-256 verified, no app restart). Download the zip from Releases, extract it and run `kn_dlp.exe`.
 
 ## 主な機能
 
@@ -33,7 +31,7 @@
 
 ## 使い方(配布版)
 
-1. `kn_dlp-<版>-win64.zip` を展開し、`kn_dlp.exe` を起動します
+1. [Releases](../../releases) から `kn_dlp-<版>-win64.zip` を取得・展開し、`kn_dlp.exe` を起動します
 2. 初回は「設定」で ffmpeg と JS ランタイムの検出状況を確認します
 3. 「新規ダウンロード」で URL を入力し、解析してからキューに追加します
 
