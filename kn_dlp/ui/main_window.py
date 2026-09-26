@@ -6,7 +6,7 @@ from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QButtonGroup, QHBoxLayout, QMainWindow, QMessageBox, QStackedWidget, QSystemTrayIcon,
                                QVBoxLayout, QWidget)
 
-from .. import APP_DISPLAY_NAME, __version__
+from .. import APP_DISPLAY_NAME, __version__, queue_store
 from ..history import History
 from ..settings import Settings
 from .history_page import HistoryPage
@@ -107,8 +107,24 @@ class MainWindow(QMainWindow):
         self._tick.start()
         QShortcut(QKeySequence('Ctrl+L'), self, activated=lambda: (self._go(0), self.new_page.url.setFocus()))
         self._go(0)
+        # 前回のキューを戻し、以後は状態が変わるたびに(まとめて)保存する。落ちても直前の状態が残る
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(1500)
+        self._save_timer.timeout.connect(self._save_queue)
+        restored = self.queue.restore(queue_store.load())
+        if restored:
+            self.statusBar().showMessage(tr('前回のキューを {count} 件戻しました(一時停止中)', count=restored), 10000)
+        self.queue.counts_changed.connect(self._save_timer.start)
+        self.queue.job_removed.connect(lambda _jid: self._save_timer.start())
         if self.settings['check_update_on_start']:
             QTimer.singleShot(1500, lambda: self.settings_page.check_update(silent=True))
+
+    def _save_queue(self) -> None:
+        try:
+            queue_store.save(self.queue.snapshot())
+        except OSError as e:
+            self.statusBar().showMessage(tr('キューを保存できませんでした: {e}', e=e), 10000)
 
     def _paint_brand(self) -> None:
         self.brand.setText(f'KN <span style="color:{theme.T["accent"]}">DLP</span>')
@@ -179,11 +195,13 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e: QCloseEvent) -> None:
         if self.queue.running_count() and QMessageBox.question(
-                self, APP_DISPLAY_NAME, tr('実行中のダウンロードがあります。中断して終了しますか?\n(途中のファイルは残り、次回は最初から追加し直す必要があります)')) \
+                self, APP_DISPLAY_NAME, tr('実行中のダウンロードがあります。中断して終了しますか?\n(途中のファイルは残り、次回の起動時に一時停止の状態で戻ります)')) \
                 != QMessageBox.StandardButton.Yes:
             e.ignore()
             return
-        self.queue.shutdown()
+        self.queue.shutdown()          # 実行中は一時停止になる
+        self._save_timer.stop()
+        self._save_queue()
         self.settings.save()
         self.history.close()
         if self.tray:

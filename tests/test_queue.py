@@ -1,8 +1,13 @@
 """キャンセル時の途中ファイル削除(Qt の import だけ必要。イベントループ不要)。"""
+import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
+
+from kn_dlp import queue_store
 
 from kn_dlp.i18n import tr
 from kn_dlp.ui.queue import Job, QueueManager, _remove_partials
@@ -52,6 +57,53 @@ class SkippedTest(unittest.TestCase):
 
     def test_none_skipped(self):
         self.assertEqual(self._finish(0, [{'path': 'a.mp4'}]).stage, tr('完了'))
+
+
+class PersistTest(unittest.TestCase):
+    """終わっていないキューの保存と復元。"""
+
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {'KN_DLP_DATA': tempfile.mkdtemp(prefix='kn_q_')})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_roundtrip(self):
+        q = QueueManager(lambda: {}, 1)
+        q._pump = lambda: None                       # テストではワーカーを起動しない
+        jobs = {st: q.add({'url': f'https://example.com/{st}', 'ffmpeg_location': 'C:/ff', 'archive_file': 'a'}, title=st)
+                for st in ('queued', 'running', 'paused', 'done', 'error', 'cancelled')}
+        for st, job in jobs.items():
+            job.status = st
+        jobs['running'].partials = {'C:/dl/x.mp4'}
+        future = time.time() + 3600
+        sched = q.add({'url': 'https://example.com/s'}, title='s', start_at=future)
+        queue_store.save(q.snapshot())
+
+        items = queue_store.load()
+        self.assertEqual([i['title'] for i in items], ['queued', 'running', 'paused', 's'])
+        self.assertNotIn('ffmpeg_location', items[0]['spec'])      # 実行環境は保存しない
+        q2 = QueueManager(lambda: {}, 1)
+        q2._pump = lambda: None
+        self.assertEqual(q2.restore(items), 4)
+        restored = [q2.jobs[j] for j in q2.order]
+        self.assertEqual([j.status for j in restored], ['paused', 'paused', 'paused', 'scheduled'])
+        self.assertEqual(restored[1].partials, {'C:/dl/x.mp4'})
+        self.assertEqual(restored[3].start_at, future)
+        self.assertEqual(sched.status, 'scheduled')
+
+    def test_load_rejects_broken(self):
+        self.assertEqual(queue_store.load(), [])                    # ファイルが無い
+        queue_store.path().write_text('{broken', encoding='utf-8')
+        self.assertEqual(queue_store.load(), [])
+        queue_store.path().write_text(json.dumps({'version': 1, 'jobs': [
+            {'spec': {'url': 'https://a'}, 'status': 'queued', 'start_at': True, 'title': 5},
+            {'spec': {'url': ''}, 'status': 'queued'}, {'spec': 'x', 'status': 'queued'},
+            {'spec': {'url': 'https://b'}, 'status': 'done'}, 'junk']}), encoding='utf-8')
+        items = queue_store.load()
+        self.assertEqual(len(items), 1)
+        self.assertEqual((items[0]['title'], items[0]['start_at']), ('https://a', None))
+        queue_store.path().write_text(json.dumps({'version': 99, 'jobs': []}), encoding='utf-8')
+        self.assertEqual(queue_store.load(), [])
 
 
 if __name__ == '__main__':

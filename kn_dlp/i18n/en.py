@@ -96,8 +96,8 @@ T = {
     'キュー': 'Queue',
     'ダウンロード完了': 'Download finished',
     'ダウンロード失敗': 'Download failed',
-    '実行中のダウンロードがあります。中断して終了しますか?\n(途中のファイルは残り、次回は最初から追加し直す必要があります)':
-        'Downloads are still running. Stop them and quit?\n(Partial files are kept; you will need to add them again next time)',
+    '実行中のダウンロードがあります。中断して終了しますか?\n(途中のファイルは残り、次回の起動時に一時停止の状態で戻ります)':
+        'Downloads are running. Stop them and quit?\n(Partial files are kept, and the jobs come back paused the next time you start the app)',
     '新規ダウンロード': 'New download',
     '設定': 'Settings',
     # new download page
@@ -435,4 +435,8 @@ T = {
     '開く': 'Open',
     '音楽以外の部分 (音楽動画)': 'Non-music section (music videos)',
     '高評価・登録のお願い': 'Like/subscribe reminder',
+    # queue persistence
+    '前回の終了時から一時停止中': 'Paused since the app was last closed',
+    '前回のキューを {count} 件戻しました(一時停止中)': 'Restored {count} job(s) from the last session (paused)',
+    'キューを保存できませんでした: {e}': 'Could not save the queue: {e}',
 }

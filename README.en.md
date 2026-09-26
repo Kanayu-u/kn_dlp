@@ -11,7 +11,7 @@ Version: **0.2.0** / License: **GPL-3.0**
 |---|---|
 | URL analysis | Shows thumbnail, title, duration, subtitle languages, chapter count and number of formats. Paste a URL or drop it onto the window |
 | Formats | Video: quality (best to 360p) and container (auto/MP4/MKV/WebM). Audio: MP3/M4A/Opus/FLAC/WAV. You can also pick a video and an audio format from the format list and merge them |
-| Queue | 1–8 parallel downloads. Pause and resume where it stopped; cancelling deletes partial files. Shows progress, speed and time left |
+| Queue | 1–8 parallel downloads. Pause and resume where it stopped; cancelling deletes partial files. Shows progress, speed and time left. Unfinished jobs survive closing the app and come back paused at the next start |
 | Clip a section | Download only the part between a start and end time. "Cut precisely" re-encodes for exact cuts |
 | Subtitles, chapters, thumbnail | Choose subtitle languages, include auto-generated ones, embed subtitles/chapters/thumbnail/metadata |
 | History | Stored in SQLite. Search, play, open folder, or download again with the same settings |
@@ -93,7 +93,6 @@ kn_dlp/
 
 ## Known limitations
 
-- The queue is not saved when the app exits (finished items remain in history)
 - Chrome / Edge cookies may be unreadable because of newer encryption or file locks while the browser is running. Firefox or cookies.txt is recommended
 - Thumbnails cannot be embedded in WebM or WAV; they are saved as a separate image file instead
 - The English, Korean and Chinese translations have not been reviewed by native speakers. Suggestions are welcome

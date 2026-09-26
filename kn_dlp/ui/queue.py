@@ -150,6 +150,36 @@ class QueueManager(QObject):
             if self.jobs[jid].status == 'paused':
                 self.resume(jid)
 
+    def snapshot(self) -> list[dict[str, Any]]:
+        """終わっていないジョブを、保存できる形で並び順に返す。"""
+        from ..queue_store import KEEP_STATUSES, RUNTIME_KEYS
+        out = []
+        for jid in self.order:
+            job = self.jobs[jid]
+            if job.status in KEEP_STATUSES:
+                out.append({'spec': {k: v for k, v in job.spec.items() if k not in RUNTIME_KEYS}, 'title': job.title,
+                            'thumbnail': job.thumbnail, 'start_at': job.start_at, 'status': job.status,
+                            'partials': sorted(job.partials)})
+        return out
+
+    def restore(self, items: list[dict[str, Any]]) -> int:
+        """前回のキューを戻す。勝手に始まらないよう、予約以外は一時停止で戻す。"""
+        for it in items:
+            job = Job(spec=dict(it['spec']), title=it['title'], thumbnail=it['thumbnail'], start_at=it['start_at'])
+            job.partials = set(it.get('partials') or [])
+            if it['status'] == 'scheduled' and job.start_at:
+                job.status = 'scheduled'
+            else:
+                job.status = 'paused'
+                job.stage = tr('前回の終了時から一時停止中')
+            self.jobs[job.id] = job
+            self.order.append(job.id)
+            self.job_added.emit(job.id)
+        if items:
+            self.counts_changed.emit()
+            self._pump()
+        return len(items)
+
     def running_count(self) -> int:
         return sum(1 for j in self.jobs.values() if j.status == 'running')
 
