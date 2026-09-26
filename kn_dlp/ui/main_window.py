@@ -157,13 +157,20 @@ class MainWindow(QMainWindow):
             icon = QSystemTrayIcon.MessageIcon.Information if job.status == 'done' else QSystemTrayIcon.MessageIcon.Warning
             self.tray.showMessage(tr('ダウンロード完了') if job.status == 'done' else tr('ダウンロード失敗'), job.title, icon, 5000)
 
-    # ドラッグ&ドロップで URL を受け取る
+    # ドラッグ&ドロップで URL(と、プラグインの .py / .zip)を受け取る
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls() or e.mimeData().hasText():
             e.acceptProposedAction()
 
     def dropEvent(self, e):
         md = e.mimeData()
+        if md.hasUrls() and md.urls()[0].isLocalFile():
+            path = md.urls()[0].toLocalFile()
+            if path.lower().endswith(('.py', '.zip')):   # プラグインの追加
+                self._go(3)
+                # ドロップ処理中にモーダルを出すとエクスプローラ側のドラッグが固まるので、処理を抜けてから聞く
+                QTimer.singleShot(0, lambda: self.settings_page.install_plugin_file(path))
+            return
         url = md.urls()[0].toString() if md.hasUrls() else md.text()
         if url.startswith(('http://', 'https://')):
             self._go(0)

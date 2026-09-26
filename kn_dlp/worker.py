@@ -1,7 +1,7 @@
 """yt-dlp を実行する子プロセス。
 
 GUI とは 1 行 1 JSON でやり取りする。
-  stdin : {"action": "probe" | "download" | "version" | "plugins", "job": {...}}  (1 行)
+  stdin : {"action": "probe" | "download" | "version" | "plugins" | "match", "job": {...}}  (1 行)
   stdout: {"t": "log" | "meta" | "progress" | "stage" | "file" | "result" | "error", ...}
 yt-dlp や ffmpeg が標準出力に書いてもプロトコルが壊れないよう、fd 1 は起動直後に stderr へ付け替える。
 キャンセル・一時停止は GUI がこのプロセスをツリーごと終了させる(.part は残るので再開できる)。
@@ -159,6 +159,10 @@ def _run(request: dict) -> int:
     load_errors = plugins.activate()
     if action == 'plugins':
         emit('result', mode=plugins.env_mode(), errors=load_errors, **plugins.list_loaded())
+        return 0
+    if action == 'match':
+        url = str((request.get('job') or {}).get('url') or '').strip()
+        emit('result', url=url, matches=plugins.match_url(url) if url else [], errors=load_errors)
         return 0
 
     job = request.get('job') or {}

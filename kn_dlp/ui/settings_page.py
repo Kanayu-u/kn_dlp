@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLineEdit, QMessageBox, QScrollArea,
-                               QFrame, QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QInputDialog, QLineEdit, QMenu,
+                               QMessageBox, QScrollArea, QFrame, QSpinBox, QVBoxLayout, QWidget)
 
 from .. import APP_DISPLAY_NAME, __version__, i18n, options, paths, plugins, tools, updater
 from ..settings import LANGUAGES, Settings
@@ -137,10 +137,29 @@ class SettingsPage(QWidget):
         pod.clicked.connect(self._open_plugins_dir)
         self.plug_reload = button(tr('再読み込み'), 'ghost')
         self.plug_reload.clicked.connect(self.refresh_plugins)
-        pr.addWidget(pod)
-        pr.addWidget(self.plug_reload)
+        add = button(tr('プラグインを追加…'))
+        add.clicked.connect(self._pick_plugin)
+        tmpl = button(tr('雛形を作る'), 'ghost')
+        menu = QMenu(tmpl)
+        menu.addAction(tr('サイト対応の雛形'), lambda: self._create_template('extractor'))
+        menu.addAction(tr('後処理の雛形'), lambda: self._create_template('postprocessor'))
+        tmpl.setMenu(menu)
+        for b in (add, pod, self.plug_reload, tmpl):
+            pr.addWidget(b)
         pr.addStretch(1)
         c.body.addLayout(pr)
+        c.body.addWidget(label(tr('.py / .zip のファイルをウィンドウにドロップしても追加できます。'
+                               'GitHub の「Download ZIP」もそのまま使えます。'), 'faint', wrap=True))
+        self.match_url = QLineEdit()
+        self.match_url.setPlaceholderText(tr('URL を入れると、どの対応(プラグイン / yt-dlp 標準)が使われるかを調べます'))
+        self.match_url.returnPressed.connect(self._match)
+        self.match_btn = button(tr('判定'), 'ghost')
+        self.match_btn.clicked.connect(self._match)
+        c.body.addLayout(_row(tr('URL の判定'), self.match_url, self.match_btn, stretch=False))
+        self.match_result = label('', 'muted', wrap=True)
+        self.match_result.hide()
+        c.body.addWidget(self.match_result)
+        self._match_proc: WorkerProcess | None = None
         c.body.addWidget(label(tr('プラグインはあなたの権限で動く Python コードです。信頼できるものだけを置いてください。'
                                'yt-dlp の更新で動かなくなることがあります。'), 'warnText', wrap=True))
         lay.addWidget(c)
@@ -275,6 +294,96 @@ class SettingsPage(QWidget):
         col.addWidget(box)
         col.addWidget(err)
         return wrap
+
+    def _pick_plugin(self) -> None:
+        f, _ = QFileDialog.getOpenFileName(self, tr('プラグインを追加'), '', tr('yt-dlp プラグイン (*.py *.zip)'))
+        if f:
+            self.install_plugin_file(f)
+
+    def install_plugin_file(self, path: str) -> None:
+        """.py / .zip をプラグインフォルダへ置く(ドロップ・ファイル選択の両方から呼ぶ)。"""
+        title = tr('プラグインを追加')
+        try:
+            plan = plugins.plan_install(path)
+        except plugins.InstallError as e:
+            QMessageBox.warning(self, title, str(e))
+            return
+        how = {'zip': tr('zip のまま置きます'), 'archive': tr('zip から yt_dlp_plugins フォルダだけを取り出して置きます'),
+               'py': tr('{kind}として置きます', kind=tr('サイト対応') if plan.kind == 'extractor' else tr('後処理'))}[plan.mode]
+        text = tr('次のプラグインを追加しますか?\n\n{src}\n→ {dst}\n({how})\n\n'
+                  'プラグインはあなたの権限で動く Python コードです。信頼できる配布元のものだけを追加してください。',
+                  src=plan.source, dst=plan.target, how=how)
+        if plan.exists:
+            text += '\n\n' + tr('同じ名前のプラグインが既にあります。置き換えます。')
+        if QMessageBox.question(self, title, text) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            plugins.install(plan, overwrite=plan.exists)
+        except plugins.InstallError as e:
+            QMessageBox.warning(self, title, str(e))
+            return
+        if plugins.current_mode() == 'off':
+            QMessageBox.information(self, title, tr('追加しました。プラグインは「オフ」なので、使うには読み込む場所を切り替えてください。'))
+        self.refresh_plugins()
+
+    def _create_template(self, kind: str) -> None:
+        title = tr('雛形を作る')
+        name, ok = QInputDialog.getText(self, title, tr('プラグインの名前 (英字で始まる英数字。例: MySite)'))
+        if not ok or not name.strip():
+            return
+        try:
+            path = plugins.create_template(kind, name)
+        except plugins.InstallError as e:
+            QMessageBox.warning(self, title, str(e))
+            return
+        reveal(str(path))   # .py を関連付けで開くと実行されることがあるので、選択状態で見せるだけにする
+        self.refresh_plugins()
+
+    def _match(self) -> None:
+        url = self.match_url.text().strip()
+        if not url:
+            return
+        if self._match_proc is not None:
+            self._match_proc.message.disconnect()
+            self._match_proc.finished.disconnect()
+            self._match_proc.kill()
+        self.match_btn.setEnabled(False)
+        self._status(self.match_result, tr('調べています…'), 'muted')
+        self.match_result.show()
+        proc = WorkerProcess(self)
+        self._match_proc = proc
+        result: dict = {}
+        proc.message.connect(lambda m: result.update(m) if m.get('t') in ('result', 'error') else None)
+        proc.finished.connect(lambda _code: self._on_match(proc, result))
+        proc.start('match', {'url': url})
+
+    def _on_match(self, proc: WorkerProcess, result: dict) -> None:
+        if proc is not self._match_proc:
+            return
+        self._match_proc = None
+        proc.deleteLater()
+        self.match_btn.setEnabled(True)
+        if result.get('t') != 'result':
+            msg = result.get('msg') or (proc.stderr_tail[-1] if proc.stderr_tail else '')
+            self._status(self.match_result, tr('判定できませんでした: {e}', e=msg), 'errText')
+            return
+        matches = result.get('matches') or []
+        if not matches:
+            self._status(self.match_result, tr('対応する抽出器がありません'), 'warnText')
+            return
+        first = matches[0]
+        if first['generic']:
+            text, name = tr('個別の対応はありません。汎用の抽出 (generic) でページ内の動画を探します。'), 'warnText'
+        elif first['plugin']:
+            text, name = tr('プラグインが使われます: {name}', name=first['name']), 'okText'
+        else:
+            text, name = tr('yt-dlp 標準の対応が使われます: {name}', name=first['name']), 'okText'
+        if not first['working']:
+            text += '\n' + tr('この抽出器は yt-dlp で「動作しない」扱いです。失敗する可能性があります。')
+        others = [m['name'] for m in matches[1:] if not m['generic']]
+        if others:
+            text += '\n' + tr('ほかに一致したもの: {names}', names=', '.join(others))
+        self._status(self.match_result, text, name)
 
     def _clear_plugin_list(self) -> None:
         while self.plug_list.count():

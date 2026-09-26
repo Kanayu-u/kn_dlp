@@ -3,11 +3,12 @@ import functools
 import http.server
 import json
 import os
-import threading
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -140,6 +141,91 @@ class PluginModeTest(unittest.TestCase):
         self.assertEqual(Settings(path)['plugins'], 'app')
 
 
+class InstallTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='kn_inst_'))
+        patcher = mock.patch.dict(os.environ, {'KN_DLP_DATA': str(self.tmp / 'data')})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.src = self.tmp / 'src'
+        self.src.mkdir()
+
+    def _zip(self, name: str, files: dict[str, str]) -> Path:
+        path = self.src / name
+        with zipfile.ZipFile(path, 'w') as zf:
+            for n, body in files.items():
+                zf.writestr(n, body)
+        return path
+
+    def test_py_extractor_and_postprocessor(self):
+        (self.src / 'mysite.py').write_text(GOOD.format(cls='MySiteIE', name='mysite'), encoding='utf-8')
+        plan = plugins.plan_install(self.src / 'mysite.py')
+        self.assertEqual((plan.mode, plan.kind, plan.exists), ('py', 'extractor', False))
+        dst = plugins.install(plan)
+        self.assertTrue((dst / 'yt_dlp_plugins' / 'extractor' / 'mysite.py').is_file())
+        (self.src / 'noop.py').write_text(GOOD_PP, encoding='utf-8')
+        self.assertEqual(plugins.plan_install(self.src / 'noop.py').kind, 'postprocessor')
+
+    def test_py_rejects(self):
+        (self.src / 'both.py').write_text(GOOD.format(cls='AIE', name='a') + GOOD_PP, encoding='utf-8')
+        (self.src / 'none.py').write_text('x = 1\n', encoding='utf-8')
+        (self.src / 'bad-name.py').write_text(GOOD_PP, encoding='utf-8')
+        (self.src / 'readme.txt').write_text('x', encoding='utf-8')
+        for f in ('both.py', 'none.py', 'bad-name.py', 'readme.txt', 'missing.py'):
+            with self.assertRaises(plugins.InstallError, msg=f):
+                plugins.plan_install(self.src / f)
+
+    def test_overwrite_needs_flag(self):
+        (self.src / 'noop.py').write_text(GOOD_PP, encoding='utf-8')
+        plugins.install(plugins.plan_install(self.src / 'noop.py'))
+        plan = plugins.plan_install(self.src / 'noop.py')
+        self.assertTrue(plan.exists)
+        with self.assertRaises(plugins.InstallError):
+            plugins.install(plan)
+        plugins.install(plan, overwrite=True)
+        self.assertEqual([p.name for p in plugins.plugins_dir().iterdir() if not p.name.endswith('.txt')], ['noop'])
+
+    def test_zip_at_root_is_copied(self):
+        z = self._zip('pack.zip', {'yt_dlp_plugins/postprocessor/noop.py': GOOD_PP})
+        plan = plugins.plan_install(z)
+        self.assertEqual((plan.mode, plan.target.name), ('zip', 'pack.zip'))
+        self.assertEqual(plugins.install(plan).read_bytes(), z.read_bytes())
+
+    def test_github_archive_is_extracted(self):
+        top = 'yt-dlp-FixupMtime-f88c711399f904eb8145626f4e977482a11326a4'
+        z = self._zip('yt-dlp-FixupMtime-master.zip', {
+            f'{top}/README.md': 'x', f'{top}/yt_dlp_plugins/postprocessor/fixup.py': GOOD_PP, f'{top}/test/test_x.py': 'x'})
+        plan = plugins.plan_install(z)
+        self.assertEqual((plan.mode, plan.target.name), ('archive', 'yt-dlp-FixupMtime'))
+        dst = plugins.install(plan)
+        files = sorted(str(p.relative_to(dst)).replace(os.sep, '/') for p in dst.rglob('*') if p.is_file())
+        self.assertEqual(files, ['yt_dlp_plugins/postprocessor/fixup.py'])
+
+    def test_zip_rejects(self):
+        bad = [self._zip('none.zip', {'top/readme.md': 'x'}),
+               self._zip('two.zip', {'a/yt_dlp_plugins/x.py': 'x', 'b/yt_dlp_plugins/y.py': 'y'})]
+        (self.src / 'broken.zip').write_bytes(b'not a zip')
+        bad.append(self.src / 'broken.zip')
+        for z in bad:
+            with self.assertRaises(plugins.InstallError, msg=z.name):
+                plugins.plan_install(z)
+        evil = self._zip('evil.zip', {'top/yt_dlp_plugins/../../evil.py': 'x'})
+        with self.assertRaises(plugins.InstallError):
+            plugins.install(plugins.plan_install(evil))
+        self.assertFalse(any(p.name == 'evil.py' for p in self.tmp.rglob('*')))
+
+    def test_template(self):
+        for kind in plugins.KINDS:
+            path = plugins.create_template(kind, f'My{kind.title()}')
+            compile(path.read_text(encoding='utf-8'), str(path), 'exec')
+            self.assertEqual(path.parent.name, kind)
+        with self.assertRaises(plugins.InstallError):
+            plugins.create_template('extractor', 'MyExtractor')      # 既存は上書きしない
+        for bad in ('1abc', 'a b', '', '../x'):
+            with self.assertRaises(plugins.InstallError, msg=bad):
+                plugins.create_template('extractor', bad)
+
+
 class WorkerPluginsTest(unittest.TestCase):
     """kn_dlp 専用フォルダと、yt-dlp 既定の場所(%APPDATA%/yt-dlp/plugins)にプラグインを置いて列挙させる。"""
 
@@ -154,6 +240,10 @@ class WorkerPluginsTest(unittest.TestCase):
         _write_plugin(own, 'ownpkg', 'postprocessor', 'noop', GOOD_PP)
         shared = cls.appdata / 'yt-dlp' / 'plugins'
         _write_plugin(shared, 'sharedpkg', 'extractor', 'shared', GOOD.format(cls='KnSharedIE', name='knshared'))
+        # 既存の抽出器の上書き(公式サンプルと同じ形)
+        _write_plugin(own, 'ownpkg', 'extractor', 'override',
+                      'from yt_dlp.extractor.vimeo import VimeoIE\n\n\n'
+                      "class _KnOverrideIE(VimeoIE, plugin_name='knov'):\n    pass\n")
 
     def _run(self, mode: str, action: str = 'plugins', job: dict | None = None) -> dict:
         env = dict(os.environ, KN_DLP_DATA=str(self.data), APPDATA=str(self.appdata),
@@ -215,6 +305,29 @@ class WorkerPluginsTest(unittest.TestCase):
         logs = '\n'.join(res['_logs'])
         self.assertIn('KnMissing', logs)
         self.assertIn('nope', logs)                            # 未知の引数は警告して飛ばす
+
+    def test_match(self):
+        first = lambda url: self._run('app', 'match', {'url': url})['matches'][0]  # noqa: E731
+        m = first('https://known.invalid/abc')
+        self.assertEqual((m['name'], m['plugin'], m['generic']), ('known', True, False))
+        m = first('https://www.youtube.com/watch?v=jNQXAC9IVRw')
+        self.assertEqual((m['key'], m['plugin']), ('Youtube', False))
+        self.assertTrue(first('https://example.org/page')['generic'])
+        m = first('https://vimeo.com/76979871')
+        self.assertEqual((m['name'], m['plugin']), ('vimeo+knov', True))
+        self.assertTrue(self._run('off', 'match', {'url': 'https://known.invalid/abc'})['matches'][0]['generic'])
+
+    def test_templates_load(self):
+        with mock.patch.dict(os.environ, {'KN_DLP_DATA': str(self.tmp / 'tmpl')}):
+            plugins.create_template('extractor', 'TmplSite')
+            plugins.create_template('postprocessor', 'TmplPost')
+        data, self.data = self.data, self.tmp / 'tmpl'
+        try:
+            res = self._run('app')
+        finally:
+            self.data = data
+        self.assertEqual(res['errors'], [])
+        self.assertTrue({('extractor', 'tmplsite'), ('postprocessor', 'TmplPostPP')} <= self._names(res), res['items'])
 
     def test_probe_reports_plugin_use_and_load_error(self):
         res = self._run('app', 'probe', {'url': 'https://known.invalid/abc'})
