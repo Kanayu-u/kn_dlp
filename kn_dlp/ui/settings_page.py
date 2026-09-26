@@ -5,11 +5,11 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLineEdit, QMessageBox, QScrollArea,
                                QFrame, QSpinBox, QVBoxLayout, QWidget)
 
-from .. import APP_DISPLAY_NAME, __version__, i18n, paths, tools, updater
+from .. import APP_DISPLAY_NAME, __version__, i18n, paths, plugins, tools, updater
 from ..settings import LANGUAGES, Settings
-from .procs import BgTask
+from .procs import BgTask, WorkerProcess
 from . import theme
-from .widgets import Card, Segmented, button, human_size, label, restyle, reveal
+from .widgets import Card, Segmented, button, human_size, label, open_path, restyle, reveal
 from ..i18n import tr
 
 
@@ -119,6 +119,35 @@ class SettingsPage(QWidget):
         c.body.addWidget(label(tr('YouTube の署名解読に必要です。無いと一部の形式が取れません。'), 'faint'))
         lay.addWidget(c)
 
+        # プラグイン
+        c = Card(tr('プラグイン'), tr('yt-dlp のプラグインで、サイト対応や後処理を追加できます'))
+        self.plug_seg = Segmented([('all', tr('すべて')), ('app', tr('kn_dlp のみ')), ('off', tr('オフ'))])
+        self.plug_seg.set_value(settings['plugins'])
+        self.plug_seg.changed.connect(self._set_plugin_mode)
+        c.body.addLayout(_row(tr('読み込む場所'), self.plug_seg))
+        self.plug_scope = label('', 'faint', wrap=True)
+        c.body.addWidget(self.plug_scope)
+        self.plug_status = label('', 'muted', wrap=True)
+        c.body.addWidget(self.plug_status)
+        self.plug_list = QVBoxLayout()
+        self.plug_list.setSpacing(4)
+        c.body.addLayout(self.plug_list)
+        pr = QHBoxLayout()
+        pod = button(tr('プラグインフォルダを開く'), 'ghost')
+        pod.clicked.connect(self._open_plugins_dir)
+        self.plug_reload = button(tr('再読み込み'), 'ghost')
+        self.plug_reload.clicked.connect(self.refresh_plugins)
+        pr.addWidget(pod)
+        pr.addWidget(self.plug_reload)
+        pr.addStretch(1)
+        c.body.addLayout(pr)
+        c.body.addWidget(label(tr('プラグインはあなたの権限で動く Python コードです。信頼できるものだけを置いてください。'
+                               'yt-dlp の更新で動かなくなることがあります。'), 'warnText', wrap=True))
+        lay.addWidget(c)
+        self._plug_proc: WorkerProcess | None = None
+        self._plug_loaded = False
+        self._update_plugin_scope()
+
         # 既定値
         c = Card(tr('既定値'))
         self.dir = QLineEdit(settings['download_dir'])
@@ -160,6 +189,83 @@ class SettingsPage(QWidget):
         code = self.lang.currentData()
         self._set('language', code)
         self.lang_note.setVisible((i18n.normalize(code) if code else i18n.system_language()) != i18n.current())
+
+    # ---- プラグイン ----
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._plug_loaded:   # 一覧はワーカーの起動が要るので、初めて開いたときに取る
+            self._plug_loaded = True
+            self.refresh_plugins()
+
+    def _set_plugin_mode(self, mode: str) -> None:
+        self._set('plugins', plugins.set_mode(mode))
+        self._update_plugin_scope()
+        self.refresh_plugins()
+
+    def _update_plugin_scope(self) -> None:
+        own = str(plugins.plugins_dir())
+        self.plug_scope.setText({
+            'all': tr('kn_dlp 専用フォルダ ({path}) と、yt-dlp 本体の既定の場所 (%APPDATA%\\yt-dlp\\plugins など) から読み込みます', path=own),
+            'app': tr('kn_dlp 専用フォルダ ({path}) だけから読み込みます', path=own),
+            'off': tr('プラグインを読み込みません'),
+        }[plugins.current_mode()])
+
+    def _open_plugins_dir(self) -> None:
+        d = plugins.ensure_dir()
+        if d is None:
+            QMessageBox.warning(self, tr('プラグイン'), tr('フォルダを作成できませんでした: {path}', path=plugins.plugins_dir()))
+            return
+        open_path(str(d))
+
+    def refresh_plugins(self) -> None:
+        if self._plug_proc is not None:
+            self._plug_proc.message.disconnect()
+            self._plug_proc.finished.disconnect()
+            self._plug_proc.kill()
+        self.plug_reload.setEnabled(False)
+        self.plug_status.setText(tr('読み込み中…'))
+        self._clear_plugin_list()
+        proc = WorkerProcess(self)
+        self._plug_proc = proc
+        result: dict = {}
+        proc.message.connect(lambda m: result.update(m) if m.get('t') in ('result', 'error') else None)
+        proc.finished.connect(lambda _code: self._on_plugins(proc, result))
+        proc.start('plugins')
+
+    def _clear_plugin_list(self) -> None:
+        while self.plug_list.count():
+            w = self.plug_list.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+
+    def _on_plugins(self, proc: WorkerProcess, result: dict) -> None:
+        if proc is not self._plug_proc:
+            return
+        self._plug_proc = None
+        proc.deleteLater()
+        self.plug_reload.setEnabled(True)
+        if result.get('t') != 'result':
+            msg = result.get('msg') or (proc.stderr_tail[-1] if proc.stderr_tail else '')
+            self._status(self.plug_status, tr('一覧を取得できませんでした: {e}', e=msg), 'errText')
+            return
+        items, errors = result.get('items') or [], result.get('errors') or []
+        kinds = {'extractor': tr('サイト対応'), 'postprocessor': tr('後処理'), 'override': tr('既存サイトの上書き')}
+        if result.get('mode') == 'off':
+            text = tr('オフのため読み込んでいません')
+        elif items or errors:
+            text = tr('{count} 件のプラグインを読み込みました', count=len(items))
+        else:
+            text = tr('プラグインはありません')
+        self._status(self.plug_status, text, 'muted')
+        dirs = result.get('dirs') or []
+        self.plug_status.setToolTip(tr('探索した場所:') + '\n' + '\n'.join(dirs) if dirs else '')
+        for it in items:
+            lb = label(f"{kinds.get(it.get('kind'), it.get('kind'))}  ·  {it.get('name')}", wrap=True)
+            lb.setToolTip(f"{it.get('class')}\n{it.get('file')}")
+            self.plug_list.addWidget(lb)
+            self.plug_list.addWidget(label(str(it.get('file') or ''), 'faint', wrap=True))
+        for err in errors:
+            self.plug_list.addWidget(label(tr('✕ 読み込み失敗: {module} — {error}', **err), 'errText', wrap=True))
 
     def _set(self, key: str, value) -> None:
         self.settings[key] = value

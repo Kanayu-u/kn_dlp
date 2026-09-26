@@ -36,6 +36,8 @@ def main() -> int:
     settings = Settings()
     lang = i18n.set_language(settings['language'])   # 画面を作る前に決める(切り替えは再起動で反映)
     _install_qt_translator(app, lang)
+    from .. import plugins
+    plugins.set_mode(settings['plugins'])
     from . import theme
     app.setFont(QFont(theme.font_families(lang).split(',')[0].strip('" '), 10))
     theme.apply(settings['theme'], lang)

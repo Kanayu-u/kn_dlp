@@ -9,6 +9,7 @@ from typing import Any
 
 from . import paths
 from .options import DEFAULT_TEMPLATE
+from .plugins import MODES as PLUGIN_MODES
 from .i18n import N_, tr
 
 # プロファイルに保存するジョブ項目(URL・保存先・Cookie・実行環境は含めない)
@@ -54,6 +55,7 @@ DEFAULTS: dict[str, Any] = {
     'log_visible': False,
     'language': '',
     'theme': 'system',
+    'plugins': 'all',          # all / app(kn_dlp のみ) / off
 }
 
 
@@ -81,6 +83,8 @@ class Settings:
                 self.data['language'] = ''
             if self.data['theme'] not in THEMES:
                 self.data['theme'] = 'system'
+            if self.data['plugins'] not in PLUGIN_MODES:
+                self.data['plugins'] = 'all'
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

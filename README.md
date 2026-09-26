@@ -3,7 +3,7 @@
 **日本語** | [English](README.en.md)
 
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) の Windows 向けデスクトップ GUI です。
-バージョン: **0.1.0** / ライセンス: **GPL-3.0**
+バージョン: **0.2.0** / ライセンス: **GPL-3.0**
 
 ## 主な機能
 
@@ -22,6 +22,7 @@
 | エラー表示 | よくある失敗を要約し、対処も表示します(原文はログに残ります) |
 | 多言語 | 日本語・英語・韓国語・中国語(簡体)。既定は OS の言語で、設定画面から変更できます(再起動で反映) |
 | テーマ | システムに合わせる / ダーク / ライト。切り替えはその場で反映されます |
+| プラグイン | yt-dlp 公式のプラグインで、サイト対応や後処理を追加できます。設定画面で読み込んだプラグインと読み込みエラーを確認できます |
 
 ## 動作環境
 
@@ -36,6 +37,18 @@
 3. 「新規ダウンロード」で URL を入力し、解析してからキューに追加します
 
 データ(設定・履歴・更新版の yt-dlp・ffmpeg)は `%LOCALAPPDATA%\kn_dlp` に保存されます。
+
+### プラグイン
+
+[yt-dlp のプラグイン](https://github.com/yt-dlp/yt-dlp#plugins)を次の場所に置くと、次のダウンロードから使われます。
+
+```
+%LOCALAPPDATA%\kn_dlp\plugins\<名前>\yt_dlp_plugins\extractor\<名前>.py      (サイト対応)
+%LOCALAPPDATA%\kn_dlp\plugins\<名前>\yt_dlp_plugins\postprocessor\<名前>.py  (後処理)
+```
+
+配布されている `.zip` はそのまま `plugins` に置けます。設定画面の「読み込む場所」で、kn_dlp 専用フォルダに加えて yt-dlp 本体の既定の場所(`%APPDATA%\yt-dlp\plugins` など)も読むか(すべて)、専用フォルダだけか、読み込まないかを選べます。
+プラグインはあなたの権限で動く Python コードです。信頼できるものだけを置いてください。yt-dlp の更新で動かなくなることがあります。
 
 ## 開発
 
@@ -63,6 +76,7 @@ kn_dlp/
   options.py            ジョブ指定 → YoutubeDL オプション(Qt 非依存・テスト対象)
   worker.py             子プロセス。GUI とは JSON Lines でやり取りする
   updater.py            yt-dlp / ffmpeg の取得(SHA-256 検証・URL 許可リスト)
+  plugins.py            yt-dlp プラグインの読み込み範囲と一覧
   history.py settings.py errors.py tools.py timeparse.py paths.py
   i18n/                 翻訳辞書(日本語の原文がキー。en / ko / zh_CN)
   ui/                   PySide6 の画面(queue.py がキュー制御、theme.py が配色)

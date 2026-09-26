@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 
-from .. import i18n, paths
+from .. import i18n, paths, plugins
 from ..i18n import tr
 
 _NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
@@ -52,6 +52,7 @@ class WorkerProcess(QObject):
         env.insert('PYTHONUTF8', '1')
         env.insert('PYTHONIOENCODING', 'utf-8')
         env.insert('KN_DLP_LANG', i18n.current())     # ワーカーのメッセージも同じ言語にする
+        env.insert(plugins.ENV_KEY, plugins.current_mode())
         self.proc.setProcessEnvironment(env)
         if os.name == 'nt' and hasattr(self.proc, 'setCreateProcessArgumentsModifier'):
             def _modifier(args):

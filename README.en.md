@@ -3,7 +3,7 @@
 [日本語](README.md) | **English**
 
 A desktop GUI for [yt-dlp](https://github.com/yt-dlp/yt-dlp) on Windows.
-Version: **0.1.0** / License: **GPL-3.0**
+Version: **0.2.0** / License: **GPL-3.0**
 
 ## Features
 
@@ -22,6 +22,7 @@ Version: **0.1.0** / License: **GPL-3.0**
 | Errors | Common failures are summarized with a suggested fix (the original message stays in the log) |
 | Languages | Japanese, English, Korean, Simplified Chinese. Follows the OS language by default; change it in Settings (takes effect after restart) |
 | Themes | System / Dark / Light, applied instantly |
+| Plugins | Add site support or post-processing with official yt-dlp plugins. The settings page lists loaded plugins and load errors |
 
 ## Requirements
 
@@ -36,6 +37,18 @@ Version: **0.1.0** / License: **GPL-3.0**
 3. Enter a URL in "New download", analyze it and add it to the queue
 
 Data (settings, history, updated yt-dlp, ffmpeg) is stored in `%LOCALAPPDATA%\kn_dlp`.
+
+### Plugins
+
+Put [yt-dlp plugins](https://github.com/yt-dlp/yt-dlp#plugins) here and they are used from the next download:
+
+```
+%LOCALAPPDATA%\kn_dlp\plugins\<name>\yt_dlp_plugins\extractor\<name>.py      (site support)
+%LOCALAPPDATA%\kn_dlp\plugins\<name>\yt_dlp_plugins\postprocessor\<name>.py  (post-processing)
+```
+
+Distributed `.zip` plugins can be dropped into `plugins` as is. In Settings → "Load from" you can choose to also read yt-dlp's default locations (`%APPDATA%\yt-dlp\plugins`, etc.) (All), only the kn_dlp folder, or no plugins (Off).
+Plugins are Python code that runs with your user rights. Only install plugins you trust. They may stop working after a yt-dlp update.
 
 ## Development
 
@@ -64,6 +77,7 @@ kn_dlp/
   options.py            job spec -> YoutubeDL options (Qt-free, unit tested)
   worker.py             child process; talks to the GUI with JSON Lines
   updater.py            downloads yt-dlp / ffmpeg (SHA-256 check, URL allowlist)
+  plugins.py            yt-dlp plugin load scope and listing
   history.py settings.py errors.py tools.py timeparse.py paths.py
   i18n/                 translation tables (key = Japanese source; en / ko / zh_CN)
   ui/                   PySide6 screens (queue.py drives the queue, theme.py the colors)

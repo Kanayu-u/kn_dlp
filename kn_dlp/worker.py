@@ -1,7 +1,7 @@
 """yt-dlp を実行する子プロセス。
 
 GUI とは 1 行 1 JSON でやり取りする。
-  stdin : {"action": "probe" | "download" | "version", "job": {...}}  (1 行)
+  stdin : {"action": "probe" | "download" | "version" | "plugins", "job": {...}}  (1 行)
   stdout: {"t": "log" | "meta" | "progress" | "stage" | "file" | "result" | "error", ...}
 yt-dlp や ffmpeg が標準出力に書いてもプロトコルが壊れないよう、fd 1 は起動直後に stderr へ付け替える。
 キャンセル・一時停止は GUI がこのプロセスをツリーごと終了させる(.part は残るので再開できる)。
@@ -155,8 +155,16 @@ def _run(request: dict) -> int:
         emit('result', version=ytdlp_version, source=source)
         return 0
 
+    from . import plugins
+    load_errors = plugins.activate()
+    if action == 'plugins':
+        emit('result', mode=plugins.env_mode(), errors=load_errors, **plugins.list_loaded())
+        return 0
+
     job = request.get('job') or {}
     logger = _Logger()
+    for err in load_errors:
+        logger.warning(tr('プラグインを読み込めませんでした: {module}: {error}', **err))
     ffmpeg = str(job.get('ffmpeg_location') or '')
     if ffmpeg:
         # 範囲DLの事前チェック(FFmpegFD.available)は params を見ず contextvar だけを見る。
@@ -170,6 +178,7 @@ def _run(request: dict) -> int:
             opts = build_probe_opts(job, logger=logger)
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(job['url'], download=False)
+                _note_plugin(ydl, info or {}, logger, set())
                 info = ydl.sanitize_info(info)
             emit('result', info=_trim_info(info or {}), ytdlp=ytdlp_version)
             return 0
@@ -182,6 +191,7 @@ def _run(request: dict) -> int:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 if embed_args is not None:
                     ydl.add_post_processor(_safe_embed_thumbnail(ydl, embed_args), when='post_process')
+                ydl.add_post_processor(_plugin_notice(ydl, logger), when='pre_process')
                 code = ydl.download([job['url']])
             emit('result', code=code, ytdlp=ytdlp_version)
             return 0 if code == 0 else 1
@@ -228,6 +238,38 @@ def _safe_embed_thumbnail(ydl, args: dict):
             return [], info
 
     return EmbedThumbnailPP(ydl, **args)
+
+
+def _note_plugin(ydl, info: dict, logger: _Logger, seen: set[str]) -> None:
+    """プラグインの抽出器が使われたら、その名前をログに出す(同じものは1回だけ)。"""
+    from . import plugins
+    key = info.get('extractor_key')
+    if not key or key in seen:
+        return
+    seen.add(key)
+    try:
+        ie = ydl.get_info_extractor(key)
+    except Exception:  # noqa: BLE001  (取れなくてもダウンロードは続ける)
+        return
+    if plugins.is_plugin_extractor(ie):
+        logger.info(tr('プラグインを使用: {name}', name=getattr(ie, 'IE_NAME', key)))
+
+
+def _plugin_notice(ydl, logger: _Logger):
+    """ダウンロード前(pre_process)に、使われた抽出器を確認するだけの後処理。"""
+    from yt_dlp.postprocessor.common import PostProcessor
+
+    seen: set[str] = set()
+
+    class PluginNoticePP(PostProcessor):
+        def set_downloader(self, downloader):
+            self._downloader = downloader   # 進捗フックは付けない(段階表示に出さない)
+
+        def run(self, info):
+            _note_plugin(ydl, info, logger, seen)
+            return [], info
+
+    return PluginNoticePP(ydl)
 
 
 def _size(path: str) -> int | None:
