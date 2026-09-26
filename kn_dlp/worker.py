@@ -1,7 +1,7 @@
 """yt-dlp を実行する子プロセス。
 
 GUI とは 1 行 1 JSON でやり取りする。
-  stdin : {"action": "probe" | "download" | "version" | "plugins" | "match", "job": {...}}  (1 行)
+  stdin : {"action": "probe" | "download" | "version" | "plugins" | "match" | "filename", "job": {...}}  (1 行)
   stdout: {"t": "log" | "meta" | "progress" | "stage" | "file" | "result" | "error", ...}
 yt-dlp や ffmpeg が標準出力に書いてもプロトコルが壊れないよう、fd 1 は起動直後に stderr へ付け替える。
 キャンセル・一時停止は GUI がこのプロセスをツリーごと終了させる(.part は残るので再開できる)。
@@ -166,6 +166,8 @@ def _run(request: dict) -> int:
         return 0
 
     job = request.get('job') or {}
+    if action == 'filename':
+        return _preview_filename(yt_dlp, job)
     logger = _Logger()
     for err in load_errors:
         logger.warning(tr('プラグインを読み込めませんでした: {module}: {error}', **err))
@@ -258,6 +260,43 @@ def _note_plugin(ydl, info: dict, logger: _Logger, seen: set[str]) -> None:
         return
     if plugins.is_plugin_extractor(ie):
         logger.info(tr('プラグインを使用: {name}', name=getattr(ie, 'IE_NAME', key)))
+
+
+def _sample_info() -> dict:
+    return {'id': 'dQw4w9WgXcQ', 'title': tr('サンプル動画のタイトル'), 'uploader': tr('投稿者名'),
+            'channel': tr('投稿者名'), 'uploader_id': '@sample', 'upload_date': time.strftime('%Y%m%d'),
+            'timestamp': int(time.time()), 'duration': 212, 'ext': 'webm', 'height': 1080, 'width': 1920,
+            'resolution': '1920x1080', 'fps': 30, 'playlist': tr('再生リスト名'), 'playlist_title': tr('再生リスト名'),
+            'playlist_index': 3, 'n_entries': 12, 'extractor': 'youtube', 'extractor_key': 'Youtube',
+            'webpage_url': 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'}
+
+
+def _preview_filename(yt_dlp, job: dict) -> int:
+    """ファイル名テンプレートを yt-dlp 自身で展開して、保存先からの相対パスを返す(ダウンロードはしない)。"""
+    from .options import JobError, build_ydl_opts, final_ext
+    from .timeparse import parse_timestamp
+
+    given = job.get('preview_info')
+    is_sample = not (isinstance(given, dict) and given.get('id'))
+    info = _sample_info() if is_sample else dict(given)
+    info.pop('formats', None)
+    info['ext'] = final_ext(job, info.get('ext') or 'webm')
+    spec = {**job, 'url': job.get('url') or 'https://example.com/'}
+    try:
+        opts = build_ydl_opts(spec)
+        start, end = parse_timestamp(job.get('range_start') or ''), parse_timestamp(job.get('range_end') or '')
+    except (JobError, ValueError) as e:
+        emit('error', msg=str(e), kind='job')
+        return 2
+    if start is not None or end is not None:
+        info['section_start'] = start or 0
+        info['section_end'] = end if end is not None else (info.get('duration') or 0)
+    home = opts['paths']['home']
+    keep = {k: opts[k] for k in ('paths', 'outtmpl', 'windowsfilenames') if k in opts}
+    with yt_dlp.YoutubeDL({**keep, 'quiet': True, 'no_warnings': True, 'logger': _Logger()}) as ydl:
+        path = ydl.prepare_filename(info)
+    emit('result', name=os.path.relpath(path, home) if path else '', sample=is_sample)
+    return 0
 
 
 def _add_plugin_pps(ydl, specs: list, logger: _Logger) -> None:

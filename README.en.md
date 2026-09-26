@@ -19,6 +19,7 @@ Version: **0.2.0** / License: **GPL-3.0**
 | Profiles | Save combinations of settings by name. Four built-in profiles |
 | Live & schedule | Wait for a live stream/premiere to start and record it, or schedule a start time |
 | Cookies | Use cookies from your browser or a cookies.txt file. Cookies are never stored by the app |
+| File names | Pick a preset (Title [ID], upload date, uploader folder, etc.) or write a yt-dlp output template. The resulting file name is previewed as you type |
 | Errors | Common failures are summarized with a suggested fix (the original message stays in the log) |
 | Languages | Japanese, English, Korean, Simplified Chinese. Follows the OS language by default; change it in Settings (takes effect after restart) |
 | Themes | System / Dark / Light, applied instantly |

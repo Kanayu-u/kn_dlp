@@ -17,6 +17,7 @@ from ..options import AUDIO_CODECS, COOKIE_BROWSERS, JOB_DEFAULTS, JobError, nor
 from ..settings import Settings
 from ..timeparse import format_seconds
 from .procs import WorkerProcess
+from .template_edit import TemplateEdit
 from .widgets import Card, Segmented, button, human_size, label, restyle
 from ..i18n import N_, tr
 
@@ -353,8 +354,7 @@ class NewPage(QWidget):
         pick = button(tr('参照'), 'ghost')
         pick.clicked.connect(self._pick_dir)
         card.body.addLayout(_row(tr('保存先'), self.out_dir, pick, stretch_last=True))
-        self.template = QLineEdit()
-        self.template.setToolTip(tr('yt-dlp の出力テンプレート。例: %(uploader)s/%(title)s.%(ext)s'))
+        self.template = TemplateEdit(lambda: (self.collect_spec(), self.info), stacked=True)
         card.body.addLayout(_row(tr('ファイル名'), self.template, stretch_last=True))
         self.playlist = QCheckBox(tr('URL がプレイリスト内の動画なら、プレイリスト全体を取得'))
         card.body.addWidget(self.playlist)
@@ -417,6 +417,7 @@ class NewPage(QWidget):
         elif self.wait_live.isChecked():
             parts.append(tr('ライブ待機'))
         self.summary.setText('  ·  '.join(parts))
+        self.template.schedule_preview()   # 形式・範囲で拡張子や名前が変わる
 
     def collect_spec(self) -> dict[str, Any]:
         spec = {
@@ -628,6 +629,7 @@ class NewPage(QWidget):
         if self.url.text().strip() != getattr(self, '_probe_url', ''):
             return  # 解析中に URL が変わった
         self.info = info
+        self.template.schedule_preview()
         self.title_lb.setText(info.get('title') or tr('(無題)'))
         bits = [b for b in (info.get('uploader') or info.get('channel'), info.get('extractor_key')) if b]
         if info.get('duration'):

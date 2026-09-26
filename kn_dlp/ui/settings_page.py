@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, Q
 from .. import APP_DISPLAY_NAME, __version__, i18n, options, paths, plugins, tools, updater
 from ..settings import LANGUAGES, Settings
 from .procs import BgTask, WorkerProcess
+from .template_edit import TemplateEdit
 from . import theme
 from .widgets import Card, Segmented, button, human_size, label, open_path, restyle, reveal
 from ..i18n import tr
@@ -174,10 +175,10 @@ class SettingsPage(QWidget):
         pd = button(tr('参照'), 'ghost')
         pd.clicked.connect(self._pick_dir)
         c.body.addLayout(_row(tr('保存先'), self.dir, pd, stretch=False))
-        self.tmpl = QLineEdit(settings['template'])
-        self.tmpl.editingFinished.connect(lambda: self._set('template', self.tmpl.text().strip() or settings['template']))
+        self.tmpl = TemplateEdit(lambda: ({'out_dir': self.dir.text().strip()}, None))
+        self.tmpl.setText(settings['template'])
+        self.tmpl.edited.connect(lambda v: self._set('template', v.strip() or settings['template']))
         c.body.addLayout(_row(tr('ファイル名'), self.tmpl, stretch=False))
-        c.body.addWidget(label(tr('例: %(uploader)s/%(title)s.%(ext)s — 使える項目は yt-dlp の README「OUTPUT TEMPLATE」を参照'), 'faint'))
         self.conc = QSpinBox()
         self.conc.setRange(1, 8)
         self.conc.setValue(settings['concurrency'])

@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 from .timeparse import parse_timestamp
-from .i18n import tr
+from .i18n import N_, tr
 
 QUALITY_PRESETS = ['best', '2160', '1440', '1080', '720', '480', '360']
 CONTAINERS = ['auto', 'mp4', 'mkv', 'webm']
@@ -19,6 +19,15 @@ AUDIO_CODECS = ['best', 'mp3', 'm4a', 'opus', 'flac', 'wav']
 COOKIE_BROWSERS = ['firefox', 'chrome', 'edge', 'brave', 'opera', 'vivaldi', 'chromium', 'whale']
 
 DEFAULT_TEMPLATE = '%(title)s [%(id)s].%(ext)s'
+
+# ファイル名の雛形(表示名は翻訳キー)
+TEMPLATE_PRESETS: list[tuple[str, str]] = [
+    (N_('タイトル [ID]'), DEFAULT_TEMPLATE),
+    (N_('タイトルのみ'), '%(title)s.%(ext)s'),
+    (N_('投稿日 タイトル'), '%(upload_date>%Y-%m-%d)s %(title)s [%(id)s].%(ext)s'),
+    (N_('投稿者のフォルダ / タイトル'), '%(uploader)s/%(title)s [%(id)s].%(ext)s'),
+    (N_('再生リストのフォルダ / 番号 タイトル'), '%(playlist)s/%(playlist_index)03d %(title)s.%(ext)s'),
+]
 
 JOB_DEFAULTS: dict[str, Any] = {
     'url': '',
@@ -187,6 +196,16 @@ def plugin_pp_spec(spec: Any) -> tuple[str, str, dict[str, str]]:
     if when not in PP_WHEN:
         raise JobError(tr('後処理プラグインの実行時点が不正です: {when}', when=when))
     return name, when, parse_pp_args(spec.get('args') or '')
+
+
+def final_ext(job: dict[str, Any], ext: str | None) -> str | None:
+    """変換・結合後の拡張子(プレビュー用)。決められなければ元のまま。"""
+    job = normalize_job(job)
+    if job['mode'] == 'audio':
+        return job['audio_codec'] if job['audio_codec'] != 'best' else ext
+    if job['container'] in ('mp4', 'mkv', 'webm'):
+        return job['container']
+    return ext
 
 
 def _parse_rate(rate: str) -> int | None:

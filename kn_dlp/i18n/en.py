@@ -154,7 +154,6 @@ T = {
     'Chrome・Edge などは新しい暗号化方式のため読めないことがあり、起動中はファイルがロックされます。Firefox か cookies.txt を推奨します。Cookie はアプリに保存しません。':
         'Chrome, Edge and similar browsers use newer encryption that may not be readable, and lock the file while running. '
         'Firefox or cookies.txt is recommended. Cookies are never stored by this app.',
-    'yt-dlp の出力テンプレート。例: %(uploader)s/%(title)s.%(ext)s': 'yt-dlp output template. e.g. %(uploader)s/%(title)s.%(ext)s',
     'URL がプレイリスト内の動画なら、プレイリスト全体を取得': 'If the URL is a video in a playlist, download the whole playlist',
     '例 5M (空欄=無制限)': 'e.g. 5M (blank = unlimited)',
     'プロファイルを保存': 'Save profile',
@@ -278,8 +277,6 @@ T = {
     'JS ランタイム': 'JS runtime',
     'YouTube の署名解読に必要です。無いと一部の形式が取れません。':
         'Needed to solve YouTube signatures. Without it some formats are unavailable.',
-    '例: %(uploader)s/%(title)s.%(ext)s — 使える項目は yt-dlp の README「OUTPUT TEMPLATE」を参照':
-        'e.g. %(uploader)s/%(title)s.%(ext)s — see "OUTPUT TEMPLATE" in the yt-dlp README for fields',
     '同時実行数': 'Parallel downloads',
     'yt-dlp (Unlicense) の GUI です。本アプリは GPL-3.0 で配布しています。ダウンロードする内容の権利と各サイトの利用規約は、利用者ご自身で確認してください。':
         'A GUI for yt-dlp (Unlicense). This app is distributed under GPL-3.0. '
@@ -395,4 +392,18 @@ T = {
     '調べています…': 'Checking…',
     '追加しました。プラグインは「オフ」なので、使うには読み込む場所を切り替えてください。': 'Added. Plugins are turned off, so change "Load from" to use it.',
     '雛形を作る': 'Create template',
+    # file name template
+    'yt-dlp の出力テンプレート。使える項目は yt-dlp の README「OUTPUT TEMPLATE」を参照': 'yt-dlp output template. See "OUTPUT TEMPLATE" in the yt-dlp README for fields',
+    'カスタム': 'Custom',
+    'サンプル動画のタイトル': 'Sample video title',
+    'タイトル [ID]': 'Title [ID]',
+    'タイトルのみ': 'Title only',
+    '保存名: {name}': 'File name: {name}',
+    '保存名の例: {name}': 'File name example: {name}',
+    '保存名を作れません: {e}': 'Cannot build the file name: {e}',
+    '再生リストのフォルダ / 番号 タイトル': 'Playlist folder / Number Title',
+    '再生リスト名': 'Playlist name',
+    '投稿日 タイトル': 'Upload date Title',
+    '投稿者のフォルダ / タイトル': 'Uploader folder / Title',
+    '投稿者名': 'Uploader name',
 }
