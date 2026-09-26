@@ -256,6 +256,7 @@ class WorkerPluginsTest(unittest.TestCase):
         self.assertTrue(res, p.stderr[-800:])
         out = res[-1]
         out['_logs'] = [m['msg'] for m in msgs if m.get('t') == 'log']
+        out['_skipped'] = [m for m in msgs if m.get('t') == 'skipped']
         return out
 
     def _names(self, res: dict) -> set[tuple[str, str]]:
@@ -279,7 +280,7 @@ class WorkerPluginsTest(unittest.TestCase):
         res = self._run('off')
         self.assertEqual((res['items'], res['errors']), ([], []))
 
-    def test_download_runs_enabled_pp_last_with_args(self):
+    def _serve_local(self) -> None:
         www = self.tmp / 'www'
         www.mkdir(exist_ok=True)
         (www / 'clip.bin').write_bytes(os.urandom(4096))
@@ -291,6 +292,27 @@ class WorkerPluginsTest(unittest.TestCase):
         own = self.data / 'plugins'
         _write_plugin(own, 'dlpkg', 'extractor', 'local', LOCAL_IE.format(port=srv.server_address[1]))
         _write_plugin(own, 'dlpkg', 'postprocessor', 'mark', MARK_PP)
+
+    def test_archive_skips_second_download(self):
+        self._serve_local()
+        out = self.tmp / 'out_arc'
+        arc = self.tmp / 'archive.txt'
+        job = {'url': 'https://knlocal.invalid/arc1', 'out_dir': str(out), 'metadata': False, 'chapters': False,
+               'use_archive': True, 'archive_file': str(arc)}
+        first = self._run('app', 'download', job)
+        self.assertEqual(first['t'], 'result', first)
+        self.assertIn('arc1', arc.read_text())
+        (next(out.glob('*.mp4'))).unlink()
+        second = self._run('app', 'download', job)
+        self.assertEqual(second['t'], 'result', second)
+        self.assertEqual(list(out.glob('*.mp4')), [])                     # 記録にあるので落とさない
+        self.assertTrue(second['_skipped'])
+        third = self._run('app', 'download', {**job, 'use_archive': False})
+        self.assertEqual(len(list(out.glob('*.mp4'))), 1)                 # 記録を使わなければ落とす
+        self.assertFalse(third['_skipped'])
+
+    def test_download_runs_enabled_pp_last_with_args(self):
+        self._serve_local()
         out = self.tmp / 'out'
         job = {'url': 'https://knlocal.invalid/v1', 'out_dir': str(out), 'metadata': False, 'chapters': False,
                'plugin_pps': [{'name': 'KnMark', 'when': 'post_process', 'args': 'tag=hello'},

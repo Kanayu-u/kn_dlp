@@ -9,11 +9,12 @@ from PySide6.QtGui import QGuiApplication, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDateTimeEdit, QDialog, QDialogButtonBox,
                                QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-                               QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox, QTableWidget,
+                               QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea, QSpinBox, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
 from .. import errors
-from ..options import AUDIO_CODECS, COOKIE_BROWSERS, JOB_DEFAULTS, JobError, normalize_job, validate_job
+from ..options import (AUDIO_CODECS, COOKIE_BROWSERS, JOB_DEFAULTS, SPONSORBLOCK_CATS, SPONSORBLOCK_MARK_ONLY, JobError,
+                       normalize_job, validate_job)
 from ..settings import Settings
 from ..timeparse import format_seconds
 from .procs import WorkerProcess
@@ -28,6 +29,12 @@ AUDIO_LABELS = {'best': N_('元の形式のまま'), 'mp3': 'MP3', 'm4a': 'M4A (
                 'wav': N_('WAV (無圧縮)')}
 AUDIO_QUALITY = [('0', N_('最高 (VBR 0)')), ('2', N_('高 (VBR 2)')), ('5', N_('標準 (VBR 5)')), ('320K', '320 kbps'),
                  ('192K', '192 kbps'), ('128K', '128 kbps')]
+SPONSORBLOCK_LABELS = {
+    'sponsor': N_('スポンサー'), 'selfpromo': N_('自己宣伝'), 'interaction': N_('高評価・登録のお願い'),
+    'intro': N_('イントロ'), 'outro': N_('エンドカード・クレジット'), 'preview': N_('予告・振り返り'),
+    'hook': N_('冒頭のつかみ・挨拶'), 'filler': N_('本筋と無関係な話'), 'music_offtopic': N_('音楽以外の部分 (音楽動画)'),
+    'poi_highlight': N_('見どころ (印のみ)'), 'chapter': N_('チャプター (印のみ)'),
+}
 BROWSER_LABELS = {'': N_('使わない'), 'firefox': N_('Firefox (推奨)'), 'chrome': 'Chrome', 'edge': 'Edge', 'brave': 'Brave',
                   'opera': 'Opera', 'vivaldi': 'Vivaldi', 'chromium': 'Chromium', 'whale': 'Whale'}
 
@@ -309,6 +316,21 @@ class NewPage(QWidget):
         self.embed_thumb = QCheckBox(tr('サムネイルを埋め込む'))
         self.metadata = QCheckBox(tr('タイトル等のメタデータを書き込む'))
         card.body.addLayout(_row(self.embed_thumb, self.metadata))
+        self.sponsorblock = _combo([('', N_('使わない')), ('mark', N_('チャプターとして印を付ける')),
+                                    ('remove', N_('その区間を削除する'))])
+        self.sponsorblock.setToolTip(tr('SponsorBlock (YouTube のみ): 利用者が登録した広告・宣伝などの区間を使います。'
+                                        '動画 ID の一部を sponsor.ajay.app に問い合わせます。'))
+        self.sponsorblock.currentIndexChanged.connect(lambda _: self._sync_enabled())
+        self.sb_cats_btn = button('', 'ghost')
+        self.sb_menu = QMenu(self.sb_cats_btn)
+        self.sb_actions: dict[str, Any] = {}
+        for key in SPONSORBLOCK_CATS:
+            act = self.sb_menu.addAction(tr(SPONSORBLOCK_LABELS[key]))
+            act.setCheckable(True)
+            act.toggled.connect(lambda _v: self._sync_enabled())
+            self.sb_actions[key] = act
+        self.sb_cats_btn.setMenu(self.sb_menu)
+        card.body.addLayout(_row('SponsorBlock', self.sponsorblock, self.sb_cats_btn))
         return card
 
     def _card_live(self) -> Card:
@@ -358,6 +380,10 @@ class NewPage(QWidget):
         card.body.addLayout(_row(tr('ファイル名'), self.template, stretch_last=True))
         self.playlist = QCheckBox(tr('URL がプレイリスト内の動画なら、プレイリスト全体を取得'))
         card.body.addWidget(self.playlist)
+        self.use_archive = QCheckBox(tr('ダウンロード済みの動画は飛ばす (記録を使う)'))
+        self.use_archive.setToolTip(tr('kn_dlp で最後まで落とした動画を記録し、次からは飛ばします。'
+                                       '再生リストやチャンネルの続きだけを取るときに便利です。切り出しは記録しません。'))
+        card.body.addWidget(self.use_archive)
         self.rate = QLineEdit()
         self.rate.setPlaceholderText(tr('例 5M (空欄=無制限)'))
         self.rate.setMaximumWidth(160)
@@ -393,6 +419,14 @@ class NewPage(QWidget):
         self.embed_subs.setEnabled(subs and video)
         self.wait_interval.setEnabled(self.wait_live.isChecked())
         self.schedule_at.setEnabled(self.schedule_on.isChecked())
+        sb = self.sponsorblock.currentData()
+        for key, act in self.sb_actions.items():   # 見どころ・チャプターは印だけ(削除できない)
+            act.setEnabled(sb == 'mark' or key not in SPONSORBLOCK_MARK_ONLY)
+        cats = self._sb_cats()
+        self.sb_cats_btn.setEnabled(bool(sb))
+        # 名前を並べるとカードが横に伸びるので、ボタンは件数だけにして名前はツールチップに出す
+        self.sb_cats_btn.setText(tr('分類 ({count})', count=len(cats)) if cats else tr('分類を選ぶ'))
+        self.sb_cats_btn.setToolTip(', '.join(tr(SPONSORBLOCK_LABELS[c]) for c in cats))
         self.cookie_profile.setEnabled(bool(self.cookie_browser.currentData()))
         self.cookie_warn.setVisible(self.cookie_browser.currentData() not in ('', 'firefox'))
         self.del_profile.setEnabled(not self.settings.is_builtin(self.profile.currentData() or ''))
@@ -410,6 +444,8 @@ class NewPage(QWidget):
             parts.append(tr('{start}〜{end}', start=self.range_start.text() or '0', end=self.range_end.text() or tr('最後')))
         if self.subs.isChecked():
             parts.append(tr('字幕'))
+        if self.sponsorblock.currentData():
+            parts.append('SponsorBlock')
         if self.cookie_browser.currentData() or self.cookie_file.text():
             parts.append('Cookie')
         if self.schedule_on.isChecked():
@@ -418,6 +454,11 @@ class NewPage(QWidget):
             parts.append(tr('ライブ待機'))
         self.summary.setText('  ·  '.join(parts))
         self.template.schedule_preview()   # 形式・範囲で拡張子や名前が変わる
+
+    def _sb_cats(self) -> list[str]:
+        remove = self.sponsorblock.currentData() == 'remove'
+        return [k for k, a in self.sb_actions.items()
+                if a.isChecked() and not (remove and k in SPONSORBLOCK_MARK_ONLY)]
 
     def collect_spec(self) -> dict[str, Any]:
         spec = {
@@ -448,6 +489,9 @@ class NewPage(QWidget):
             'cookies_profile': self.cookie_profile.text().strip(),
             'cookies_file': self.cookie_file.text().strip(),
             'rate_limit': self.rate.text().strip(),
+            'sponsorblock': self.sponsorblock.currentData(),
+            'sponsorblock_cats': ','.join(self._sb_cats()),
+            'use_archive': self.use_archive.isChecked(),
         }
         if spec['mode'] == 'audio' and self.custom_format:
             spec['quality'], spec['format'] = 'custom', self.custom_format
@@ -479,6 +523,11 @@ class NewPage(QWidget):
         self.wait_interval.setValue(int(s['wait_retry_sec'] or 60))
         self.live_from_start.setChecked(bool(s['live_from_start']))
         self.rate.setText(s['rate_limit'])
+        _set_combo(self.sponsorblock, s['sponsorblock'])
+        cats = {c.strip() for c in str(s['sponsorblock_cats']).split(',')}
+        for key, act in self.sb_actions.items():
+            act.setChecked(key in cats)
+        self.use_archive.setChecked(bool(s['use_archive']))
         if include_url:
             if s['out_dir']:
                 self.out_dir.setText(s['out_dir'])
@@ -703,7 +752,7 @@ class NewPage(QWidget):
             return
         title = (self.info or {}).get('title') or spec['url']
         # 実行環境(ffmpeg/JS/後処理プラグイン)は実行直前に最新を入れ直すので、キューには保存しない
-        for k in ('ffmpeg_location', 'js_runtime', 'plugin_pps'):
+        for k in ('ffmpeg_location', 'js_runtime', 'plugin_pps', 'archive_file'):
             spec.pop(k, None)
         self.enqueue.emit(spec, title, self.current_thumbnail(), start_at)
         self.settings['download_dir'] = spec['out_dir'] or self.settings['download_dir']

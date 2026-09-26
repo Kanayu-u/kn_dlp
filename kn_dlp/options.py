@@ -52,6 +52,12 @@ JOB_DEFAULTS: dict[str, Any] = {
     'chapters': True,
     'embed_thumbnail': False,
     'metadata': True,
+    # SponsorBlock(YouTube のみ): '' / 'mark'(チャプターとして印) / 'remove'(区間を削除)
+    'sponsorblock': '',
+    'sponsorblock_cats': 'sponsor,selfpromo,interaction',
+    # ダウンロード済みの記録(同じ動画を2度落とさない)。記録ファイルの場所は実行直前に入れる
+    'use_archive': False,
+    'archive_file': '',
     # H: ライブ待機
     'wait_live': False,
     'wait_retry_sec': 60,
@@ -66,6 +72,13 @@ JOB_DEFAULTS: dict[str, Any] = {
     'rate_limit': '',           # '5M' など
     'plugin_pps': [],           # 有効な後処理プラグイン [{'name', 'when', 'args'}](実行直前に設定から入れる)
 }
+
+# SponsorBlock の分類(yt-dlp の SponsorBlockPP.CATEGORIES と同じ。印のみ可のものは削除に使えない)
+SPONSORBLOCK_CATS = ['sponsor', 'selfpromo', 'interaction', 'intro', 'outro', 'preview', 'hook', 'filler',
+                     'music_offtopic', 'poi_highlight', 'chapter']
+SPONSORBLOCK_MARK_ONLY = {'poi_highlight', 'chapter'}
+SPONSORBLOCK_CHAPTER_TITLE = '[SponsorBlock]: %(category_names)l'
+SPONSORBLOCK_API = 'https://sponsor.ajay.app'
 
 # 後処理プラグインを動かす時点(yt-dlp の --use-postprocessor の when のうち、GUI で選べるもの)
 PP_WHEN = ('pre_process', 'before_dl', 'post_process', 'after_move', 'playlist')
@@ -107,6 +120,7 @@ def validate_job(job: dict[str, Any]) -> None:
         raise JobError(tr('ファイル名テンプレートに絶対パスや .. は使えません'))
     if job['cookies_browser'] and job['cookies_browser'] not in COOKIE_BROWSERS:
         raise JobError(tr('未対応のブラウザ: {cookies_browser}', cookies_browser=job['cookies_browser']))
+    sponsorblock_categories(job)
     try:
         start = parse_timestamp(job['range_start'])
         end = parse_timestamp(job['range_end'])
@@ -141,9 +155,29 @@ def _range_callback(start: float | None, end: float | None):
     return ranges
 
 
+def sponsorblock_categories(job: dict[str, Any]) -> list[str]:
+    """SponsorBlock の分類を検証して返す。無効なら空。"""
+    mode = job.get('sponsorblock') or ''
+    if not mode:
+        return []
+    if mode not in ('mark', 'remove'):
+        raise JobError(tr('SponsorBlock の指定が不正です: {mode}', mode=mode))
+    cats = [c.strip() for c in str(job.get('sponsorblock_cats') or '').split(',') if c.strip()]
+    allowed = set(SPONSORBLOCK_CATS) - (SPONSORBLOCK_MARK_ONLY if mode == 'remove' else set())
+    bad = [c for c in cats if c not in allowed]
+    if bad:
+        raise JobError(tr('SponsorBlock の分類が不正です: {cats}', cats=', '.join(bad)))
+    if not cats:
+        raise JobError(tr('SponsorBlock の分類を1つ以上指定してください'))
+    return list(dict.fromkeys(cats))
+
+
 def build_postprocessors(job: dict[str, Any]) -> list[dict[str, Any]]:
     pps: list[dict[str, Any]] = []
     audio = job['mode'] == 'audio'
+    sb_cats = sponsorblock_categories(job)
+    if sb_cats:   # CLI の --sponsorblock-mark / --sponsorblock-remove と同じ組み立て
+        pps.append({'key': 'SponsorBlock', 'categories': sb_cats, 'api': SPONSORBLOCK_API, 'when': 'after_filter'})
     if audio:
         pps.append({
             'key': 'FFmpegExtractAudio',
@@ -155,10 +189,20 @@ def build_postprocessors(job: dict[str, Any]) -> list[dict[str, Any]]:
         pps.append({'key': 'FFmpegVideoRemuxer', 'preferedformat': job['container']})
     if job['subs'] and job['embed_subs'] and not audio:
         pps.append({'key': 'FFmpegEmbedSubtitle', 'already_have_subtitle': False})
-    if job['metadata'] or job['chapters']:
+    if sb_cats:   # ModifyChapters は FFmpegMetadata より前に置く(CLI と同じ順)
+        pps.append({
+            'key': 'ModifyChapters',
+            'remove_chapters_patterns': [],
+            'remove_sponsor_segments': sb_cats if job['sponsorblock'] == 'remove' else [],
+            'remove_ranges': [],
+            'sponsorblock_chapter_title': SPONSORBLOCK_CHAPTER_TITLE,
+            'force_keyframes': bool(job['precise_cut']),
+        })
+    mark = job['sponsorblock'] == 'mark' and bool(sb_cats)
+    if job['metadata'] or job['chapters'] or mark:
         pps.append({
             'key': 'FFmpegMetadata',
-            'add_chapters': bool(job['chapters']),
+            'add_chapters': bool(job['chapters']) or mark,   # 印はチャプターとして書き込む
             'add_metadata': bool(job['metadata']),
             'add_infojson': False,
         })
@@ -284,6 +328,9 @@ def build_ydl_opts(job: dict[str, Any], *, logger=None, progress_hooks=(), postp
     rt = job['js_runtime']
     if rt and rt.get('name'):
         opts['js_runtimes'] = {rt['name']: ({'path': rt['path']} if rt.get('path') else {})}
+    # 切り出しは一部だけなので記録しない(記録すると、後で全体を落とすときに飛ばされる)
+    if job['use_archive'] and job['archive_file'] and not ranged:
+        opts['download_archive'] = str(job['archive_file'])
     if (rate := _parse_rate(job['rate_limit'])) is not None:
         opts['ratelimit'] = rate
     return opts

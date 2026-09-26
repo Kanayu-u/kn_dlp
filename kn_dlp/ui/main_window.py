@@ -130,7 +130,8 @@ class MainWindow(QMainWindow):
         self._go(1)
 
     def _redownload(self, job: dict) -> None:
-        self.new_page.apply_spec(job)
+        # 再ダウンロードは明示の操作なので、ダウンロード済みの記録では飛ばさない
+        self.new_page.apply_spec({**job, 'use_archive': False})
         self._go(0)
         self.statusBar().showMessage(tr('履歴の設定を読み込みました。内容を確認して追加してください'), 6000)
 

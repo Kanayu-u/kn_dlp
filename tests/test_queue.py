@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from kn_dlp.ui.queue import Job, _remove_partials
+from kn_dlp.i18n import tr
+from kn_dlp.ui.queue import Job, QueueManager, _remove_partials
 
 
 class RemovePartialsTest(unittest.TestCase):
@@ -26,6 +27,31 @@ class RemovePartialsTest(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(out)), ['unrelated.mp4', 'v.mp4'])
             self.assertTrue(Path(str(outside) + '.part').exists())
             self.assertFalse(job.partials)
+
+
+class SkippedTest(unittest.TestCase):
+    """ダウンロード済みの記録で飛ばしたジョブは、完了でも「飛ばした」と分かるようにする。"""
+
+    def _finish(self, skipped: int, files: list) -> Job:
+        q = QueueManager(lambda: {}, 1)
+        job = Job(spec={}, status='running', files=files)
+        q.jobs[job.id] = job
+        q.order.append(job.id)
+        for _ in range(skipped):
+            q._on_message(job, {'t': 'skipped', 'reason': 'archive'})
+        q._on_finished(job, 0)
+        return job
+
+    def test_all_skipped(self):
+        job = self._finish(1, [])
+        self.assertEqual((job.status, job.stage), ('done', tr('ダウンロード済みのため飛ばしました')))
+
+    def test_some_skipped(self):
+        job = self._finish(2, [{'path': 'a.mp4'}])
+        self.assertEqual(job.stage, tr('完了 ({count} 件はダウンロード済みのため飛ばしました)', count=2))
+
+    def test_none_skipped(self):
+        self.assertEqual(self._finish(0, [{'path': 'a.mp4'}]).stage, tr('完了'))
 
 
 if __name__ == '__main__':

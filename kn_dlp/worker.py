@@ -31,14 +31,19 @@ def emit(msg_type: str, /, **payload: Any) -> None:
         os._exit(3)  # GUI 側が閉じた
 
 
+_ARCHIVED = 'has already been recorded in the archive'
+
+
 class _Logger:
     def debug(self, msg: str) -> None:
         if msg.startswith('[debug] '):
             return
-        emit('log', level='info', msg=msg)
+        self.info(msg)
 
     def info(self, msg: str) -> None:
         emit('log', level='info', msg=msg)
+        if _ARCHIVED in msg:   # ダウンロード済みの記録にあって飛ばした
+            emit('skipped', reason='archive')
 
     def warning(self, msg: str) -> None:
         emit('log', level='warning', msg=msg)

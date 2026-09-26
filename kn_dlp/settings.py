@@ -16,7 +16,7 @@ from .i18n import N_, tr
 PROFILE_KEYS = [
     'mode', 'quality', 'container', 'audio_codec', 'audio_quality', 'template', 'playlist',
     'precise_cut', 'subs', 'sub_langs', 'auto_subs', 'embed_subs', 'chapters', 'embed_thumbnail',
-    'metadata', 'wait_live', 'live_from_start', 'rate_limit',
+    'metadata', 'wait_live', 'live_from_start', 'rate_limit', 'sponsorblock', 'sponsorblock_cats', 'use_archive',
 ]
 
 # 組み込みプロファイルは言語に依存しない ID で保存し、表示名だけ翻訳する

@@ -20,6 +20,8 @@ Version: **0.2.0** / License: **GPL-3.0**
 | Live & schedule | Wait for a live stream/premiere to start and record it, or schedule a start time |
 | Cookies | Use cookies from your browser or a cookies.txt file. Cookies are never stored by the app |
 | File names | Pick a preset (Title [ID], upload date, uploader folder, etc.) or write a yt-dlp output template. The resulting file name is previewed as you type |
+| SponsorBlock | Mark community-submitted YouTube segments (sponsors, self-promotion, etc.) as chapters, or remove them |
+| Download record | Remember downloaded videos and skip them next time, to fetch only new items from a playlist or channel |
 | Errors | Common failures are summarized with a suggested fix (the original message stays in the log) |
 | Languages | Japanese, English, Korean, Simplified Chinese. Follows the OS language by default; change it in Settings (takes effect after restart) |
 | Themes | System / Dark / Light, applied instantly |

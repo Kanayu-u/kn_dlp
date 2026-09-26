@@ -43,6 +43,7 @@ class Job:
     log: list[str] = field(default_factory=list)
     partials: set[str] = field(default_factory=set)   # 途中ファイルの削除候補(ワーカーが報告したものだけ)
     waiting_live: bool = False
+    skipped: int = 0                 # ダウンロード済みの記録にあって飛ばした数
 
     @property
     def fraction(self) -> float:
@@ -224,6 +225,8 @@ class QueueManager(QObject):
             if msg.startswith('[wait]') or 'Waiting for' in msg or 'Remaining time until next attempt' in msg:
                 job.waiting_live = True
                 job.stage = tr('ライブ開始待ち')
+        elif t == 'skipped':
+            job.skipped += 1
         elif t == 'error':
             job.error_raw = str(m.get('msg') or job.error_raw)
             if m.get('trace'):
@@ -237,7 +240,12 @@ class QueueManager(QObject):
         if job.status == 'running':
             if code == 0:
                 job.status = 'done'
-                job.stage = tr('完了')
+                if job.skipped and not job.files:
+                    job.stage = tr('ダウンロード済みのため飛ばしました')
+                elif job.skipped:
+                    job.stage = tr('完了 ({count} 件はダウンロード済みのため飛ばしました)', count=job.skipped)
+                else:
+                    job.stage = tr('完了')
             else:
                 job.status = 'error'
                 raw = job.error_raw or (proc.stderr_tail[-1] if proc and proc.stderr_tail else tr('終了コード {code}', code=code))

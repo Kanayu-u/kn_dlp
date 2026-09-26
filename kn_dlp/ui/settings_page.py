@@ -5,7 +5,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QInputDialog, QLineEdit, QMenu,
                                QMessageBox, QScrollArea, QFrame, QSpinBox, QVBoxLayout, QWidget)
 
-from .. import APP_DISPLAY_NAME, __version__, i18n, options, paths, plugins, tools, updater
+from .. import APP_DISPLAY_NAME, __version__, archive, i18n, options, paths, plugins, tools, updater
 from ..settings import LANGUAGES, Settings
 from .procs import BgTask, WorkerProcess
 from .template_edit import TemplateEdit
@@ -179,6 +179,12 @@ class SettingsPage(QWidget):
         self.tmpl.setText(settings['template'])
         self.tmpl.edited.connect(lambda v: self._set('template', v.strip() or settings['template']))
         c.body.addLayout(_row(tr('ファイル名'), self.tmpl, stretch=False))
+        self.archive_lb = label('', 'muted')
+        arc_open = button(tr('開く'), 'ghost')
+        arc_open.clicked.connect(lambda: reveal(str(archive.path())))
+        self.arc_clear = button(tr('記録を消去'), 'ghost')
+        self.arc_clear.clicked.connect(self._clear_archive)
+        c.body.addLayout(_row(tr('ダウンロード済みの記録'), self.archive_lb, arc_open, self.arc_clear))
         self.conc = QSpinBox()
         self.conc.setRange(1, 8)
         self.conc.setValue(settings['concurrency'])
@@ -213,9 +219,26 @@ class SettingsPage(QWidget):
     # ---- プラグイン ----
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        self._refresh_archive()
         if not self._plug_loaded:   # 一覧はワーカーの起動が要るので、初めて開いたときに取る
             self._plug_loaded = True
             self.refresh_plugins()
+
+    def _refresh_archive(self) -> None:
+        n = archive.count()
+        self.archive_lb.setText(tr('{count} 件', count=n))
+        self.arc_clear.setEnabled(n > 0)
+
+    def _clear_archive(self) -> None:
+        if QMessageBox.question(self, tr('ダウンロード済みの記録'),
+                                tr('記録を消去しますか? 次からは同じ動画も再びダウンロードされます。\n(直前の記録は archive.txt.bak に残ります)')) \
+                != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            archive.clear()
+        except OSError as e:
+            QMessageBox.warning(self, tr('ダウンロード済みの記録'), tr('消去できませんでした: {e}', e=e))
+        self._refresh_archive()
 
     def _set_plugin_mode(self, mode: str) -> None:
         self._set('plugins', plugins.set_mode(mode))
@@ -438,7 +461,7 @@ class SettingsPage(QWidget):
         ff = tools.find_ffmpeg(self.settings['ffmpeg_path'])
         pps = self.settings.enabled_plugin_pps() if plugins.current_mode() != 'off' else []
         return {'ffmpeg_location': ff or '', 'js_runtime': tools.find_js_runtime(self.settings['js_runtime']),
-                'plugin_pps': pps}
+                'plugin_pps': pps, 'archive_file': str(archive.path())}
 
     def refresh_tools(self) -> None:
         e = self.env()
