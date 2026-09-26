@@ -185,6 +185,25 @@ class InstallTest(unittest.TestCase):
         plugins.install(plan, overwrite=True)
         self.assertEqual([p.name for p in plugins.plugins_dir().iterdir() if not p.name.endswith('.txt')], ['noop'])
 
+    def test_failed_replace_keeps_old(self):
+        (self.src / 'noop.py').write_text(GOOD_PP, encoding='utf-8')
+        dst = plugins.install(plugins.plan_install(self.src / 'noop.py'))
+        (self.src / 'noop.py').write_text(GOOD_PP + '# v2\n', encoding='utf-8')
+        real_replace = os.replace
+        calls = []
+
+        def flaky(src, dst_):
+            calls.append((src, dst_))
+            if str(src).endswith('.installing'):     # 新しいものを置く段階だけ失敗させる(使用中を想定)
+                raise PermissionError('in use')
+            return real_replace(src, dst_)
+        with mock.patch.object(plugins.os, 'replace', flaky):
+            with self.assertRaises(plugins.InstallError):
+                plugins.install(plugins.plan_install(self.src / 'noop.py'), overwrite=True)
+        body = (dst / 'yt_dlp_plugins' / 'postprocessor' / 'noop.py').read_text(encoding='utf-8')
+        self.assertNotIn('# v2', body)                      # 古いものが戻っている
+        self.assertEqual(sorted(p.name for p in plugins.plugins_dir().iterdir()), ['README.txt', 'noop'])
+
     def test_zip_at_root_is_copied(self):
         z = self._zip('pack.zip', {'yt_dlp_plugins/postprocessor/noop.py': GOOD_PP})
         plan = plugins.plan_install(z)
@@ -327,6 +346,20 @@ class WorkerPluginsTest(unittest.TestCase):
         logs = '\n'.join(res['_logs'])
         self.assertIn('KnMissing', logs)
         self.assertIn('nope', logs)                            # 未知の引数は警告して飛ばす
+
+    def test_filename_preview_does_not_run_plugins(self):
+        marker = self.tmp / 'imported.txt'
+        _write_plugin(self.data / 'plugins', 'spy', 'extractor', 'spy',
+                      f'open({str(marker)!r}, "w").write("x")\n' + GOOD.format(cls='KnSpyIE', name='knspy'))
+        try:
+            res = self._run('all', 'filename', {'out_dir': str(self.tmp)})
+            self.assertEqual(res['t'], 'result', res)
+            self.assertFalse(marker.exists())
+            self._run('all')                                   # 一覧では読み込まれる(印が付く)ことの確認
+            self.assertTrue(marker.exists())
+        finally:
+            import shutil
+            shutil.rmtree(self.data / 'plugins' / 'spy', ignore_errors=True)
 
     def test_match(self):
         first = lambda url: self._run('app', 'match', {'url': url})['matches'][0]  # noqa: E731

@@ -160,6 +160,10 @@ def _run(request: dict) -> int:
         emit('result', version=ytdlp_version, source=source)
         return 0
 
+    job = request.get('job') or {}
+    if action == 'filename':   # 保存名のプレビューはプラグイン不要(入力のたびに他人のコードを動かさない)
+        return _preview_filename(yt_dlp, job)
+
     from . import plugins
     load_errors = plugins.activate()
     if action == 'plugins':
@@ -170,9 +174,6 @@ def _run(request: dict) -> int:
         emit('result', url=url, matches=plugins.match_url(url) if url else [], errors=load_errors)
         return 0
 
-    job = request.get('job') or {}
-    if action == 'filename':
-        return _preview_filename(yt_dlp, job)
     logger = _Logger()
     for err in load_errors:
         logger.warning(tr('プラグインを読み込めませんでした: {module}: {error}', **err))

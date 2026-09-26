@@ -257,7 +257,9 @@ def install(plan: InstallPlan, *, overwrite: bool = False) -> Path:
     if plan.exists and not overwrite:
         raise InstallError(tr('同じ名前のプラグインが既にあります: {path}', path=plan.target))
     tmp = plan.target.with_name(plan.target.name + '.installing')
+    old = plan.target.with_name(plan.target.name + '.old')
     _remove(tmp)
+    _remove(old)
     try:
         if plan.mode == 'zip':
             shutil.copyfile(plan.source, tmp)
@@ -275,8 +277,16 @@ def install(plan: InstallPlan, *, overwrite: bool = False) -> Path:
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     with zf.open(name) as fin, open(dst, 'wb') as fout:
                         shutil.copyfileobj(fin, fout)
-        _remove(plan.target)
-        os.replace(tmp, plan.target)
+        # 古いものは消さずに退避してから差し替える(使用中などで失敗したら元に戻す)
+        if plan.target.exists():
+            os.replace(plan.target, old)
+        try:
+            os.replace(tmp, plan.target)
+        except OSError:
+            if old.exists() and not plan.target.exists():
+                os.replace(old, plan.target)
+            raise
+        _remove(old)
     except OSError as e:
         _remove(tmp)
         raise InstallError(tr('プラグインを置けませんでした: {e}', e=e)) from None

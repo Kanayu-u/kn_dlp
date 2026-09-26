@@ -1,7 +1,7 @@
 """設定画面: 既定値・外部ツール・yt-dlp 更新(F)。"""
 from __future__ import annotations
 
-from PySide6.QtCore import QUrl, Signal
+from PySide6.QtCore import QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QInputDialog, QLineEdit, QMenu,
                                QMessageBox, QScrollArea, QFrame, QSpinBox, QVBoxLayout, QWidget)
@@ -287,6 +287,8 @@ class SettingsPage(QWidget):
         proc.message.connect(lambda m: result.update(m) if m.get('t') in ('result', 'error') else None)
         proc.finished.connect(lambda _code: self._on_plugins(proc, result))
         proc.start('plugins')
+        # 読み込み時に止まるプラグインがあっても「読み込み中…」のままにしない
+        QTimer.singleShot(60_000, lambda: proc.kill() if proc is self._plug_proc else None)
 
     def _pp_controls(self, name: str) -> QWidget:
         """後処理プラグイン1つ分の「実行する / 時点 / 引数」。変更はその場で保存する。"""
@@ -436,6 +438,8 @@ class SettingsPage(QWidget):
         self.plug_reload.setEnabled(True)
         if result.get('t') != 'result':
             msg = result.get('msg') or (proc.stderr_tail[-1] if proc.stderr_tail else '')
+            if proc.killed:
+                msg = tr('60 秒以内に応答がありませんでした(読み込み時に止まるプラグインがある可能性があります)')
             self._status(self.plug_status, tr('一覧を取得できませんでした: {e}', e=msg), 'errText')
             return
         items, errors = result.get('items') or [], result.get('errors') or []

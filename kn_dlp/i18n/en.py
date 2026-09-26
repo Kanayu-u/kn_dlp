@@ -445,4 +445,5 @@ T = {
     'リリースページを開く': 'Open release page',
     '新しい版 {version} ({date} 公開) があります。リリースページから zip を取得して置き換えてください(設定・履歴・キューはデータフォルダにあるので引き継がれます)。': 'Version {version} (released {date}) is available. Get the zip from the release page and replace the app (settings, history and the queue are kept in the data folder).',
     '起動時に更新を確認する (yt-dlp と本アプリ)': 'Check for updates at startup (yt-dlp and this app)',
+    '60 秒以内に応答がありませんでした(読み込み時に止まるプラグインがある可能性があります)': 'No response within 60 seconds (a plugin may hang while loading)',
 }
