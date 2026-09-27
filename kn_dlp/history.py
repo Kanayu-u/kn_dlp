@@ -28,7 +28,7 @@ CREATE INDEX IF NOT EXISTS idx_downloads_created ON downloads(created_at DESC);
 """
 
 # 履歴に残すジョブ項目から除く(Cookie の指定元や実行環境は再ダウンロード時に現在の設定を使う)
-_EXCLUDE_FROM_JOB = {'cookies_file', 'cookies_profile', 'ffmpeg_location', 'js_runtime'}
+_EXCLUDE_FROM_JOB = {'cookies_file', 'cookies_profile', 'ffmpeg_location', 'js_runtime', 'plugin_pps', 'archive_file'}
 
 
 class History:

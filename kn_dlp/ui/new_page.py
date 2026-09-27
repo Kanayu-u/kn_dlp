@@ -9,7 +9,7 @@ from PySide6.QtGui import QGuiApplication, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDateTimeEdit, QDialog, QDialogButtonBox,
                                QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-                               QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea, QSpinBox, QTableWidget,
+                               QLineEdit, QMenu, QMessageBox, QScrollArea, QSpinBox, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
 from .. import errors
@@ -719,8 +719,9 @@ class NewPage(QWidget):
         self.formats_btn.setEnabled(bool(info.get('formats')))
         self.thumb.setPixmap(QPixmap())
         self.thumb.setText('')
-        if info.get('thumbnail'):
-            req = QNetworkRequest(QUrl(info['thumbnail']))
+        thumb_url = QUrl(str(info.get('thumbnail') or ''))
+        if thumb_url.scheme() in ('http', 'https'):   # サイト由来の値なので file: などは読まない
+            req = QNetworkRequest(thumb_url)
             req.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
                              QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
             self.net.get(req)

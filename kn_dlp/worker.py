@@ -170,7 +170,7 @@ def _run(request: dict) -> int:
         emit('result', mode=plugins.env_mode(), errors=load_errors, **plugins.list_loaded())
         return 0
     if action == 'match':
-        url = str((request.get('job') or {}).get('url') or '').strip()
+        url = str(job.get('url') or '').strip()
         emit('result', url=url, matches=plugins.match_url(url) if url else [], errors=load_errors)
         return 0
 

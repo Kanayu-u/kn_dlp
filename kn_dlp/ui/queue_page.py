@@ -123,8 +123,13 @@ class JobCard(QFrame):
                 bits.append(tr('残り {eta}', eta=format_seconds(job.eta)))
         if job.status == 'done':
             size = sum(f.get('size') or 0 for f in job.files)
-            bits.append(tr('{count} ファイル · {size}', count=len(job.files), size=human_size(size)) if job.files else tr('完了'))
+            if job.files:
+                bits.append(tr('{count} ファイル · {size}', count=len(job.files), size=human_size(size)))
+            if job.skipped or not job.files:   # ダウンロード済みの記録で飛ばしたことを見せる
+                bits.append(job.stage or tr('完了'))
         if job.status == 'paused':
+            if job.stage and job.stage != tr('一時停止'):   # 「前回の終了時から一時停止中」など
+                bits.append(job.stage)
             bits.append(tr('再開すると途中から続けます'))
         return '  ·  '.join(bits) or job.spec.get('url', '')
 

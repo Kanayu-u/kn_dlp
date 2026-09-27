@@ -55,6 +55,15 @@ class SkippedTest(unittest.TestCase):
         job = self._finish(2, [{'path': 'a.mp4'}])
         self.assertEqual(job.stage, tr('完了 ({count} 件はダウンロード済みのため飛ばしました)', count=2))
 
+    def test_card_shows_skip_and_restore(self):
+        from kn_dlp.ui.queue_page import JobCard
+        job = self._finish(1, [])
+        self.assertIn(tr('ダウンロード済みのため飛ばしました'), JobCard._detail(job))
+        paused = Job(spec={'url': 'https://a'}, status='paused', stage=tr('前回の終了時から一時停止中'))
+        self.assertIn(tr('前回の終了時から一時停止中'), JobCard._detail(paused))
+        manual = Job(spec={'url': 'https://a'}, status='paused', stage=tr('一時停止'))
+        self.assertNotIn(tr('一時停止') + '  ·', JobCard._detail(manual))
+
     def test_none_skipped(self):
         self.assertEqual(self._finish(0, [{'path': 'a.mp4'}]).stage, tr('完了'))
 
