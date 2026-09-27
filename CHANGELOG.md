@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に準じ、バージョンは Semantic Versioning に従います。
 
+## [Unreleased]
+
+### Fixed
+- 英語 UI で、件数が 1 のときも複数形になっていた表示(「1 files」など)を「Files: 1」の形に修正
+
+### Changed
+- README にスクリーンショットを追加
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

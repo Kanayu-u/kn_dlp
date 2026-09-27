@@ -5,6 +5,11 @@
 A desktop GUI for [yt-dlp](https://github.com/yt-dlp/yt-dlp) on Windows.
 Version: **0.2.0** / License: **GPL-3.0**
 
+<p align="center">
+  <img src="docs/screenshots/en_dark_new.png" width="49%" alt="New download page (dark)">
+  <img src="docs/screenshots/en_light_queue.png" width="49%" alt="Queue page (light)">
+</p>
+
 ## Features
 
 | Feature | Details |
@@ -103,3 +108,5 @@ kn_dlp/
 
 This app is licensed under the GNU General Public License v3.0 (`LICENSE`). See `THIRD_PARTY_NOTICES.md` for bundled components.
 You are responsible for the rights to what you download and for following each site's terms of service.
+
+The video shown in the screenshots is Big Buck Bunny (© Blender Foundation, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)).

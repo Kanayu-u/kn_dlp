@@ -5,6 +5,11 @@
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) の Windows 向けデスクトップ GUI です。
 バージョン: **0.2.0** / ライセンス: **GPL-3.0**
 
+<p align="center">
+  <img src="docs/screenshots/ja_dark_new.png" width="49%" alt="新規ダウンロード画面(ダーク)">
+  <img src="docs/screenshots/ja_light_queue.png" width="49%" alt="キュー画面(ライト)">
+</p>
+
 ## 主な機能
 
 | 機能 | 内容 |
@@ -102,3 +107,5 @@ kn_dlp/
 
 本体は GNU General Public License v3.0 です(`LICENSE`)。同梱物のライセンスは `THIRD_PARTY_NOTICES.md` を参照してください。
 ダウンロードする内容の権利と、各サイトの利用規約は、利用者ご自身で確認してください。
+
+スクリーンショットに写っている映像は Big Buck Bunny(© Blender Foundation, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/))です。
